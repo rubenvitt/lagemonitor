@@ -5,6 +5,9 @@ services:
     network_mode: host
     environment:
       LAGEMONITOR_BIND: 127.0.0.1:8080,${LAN_IP:?LAN_IP fehlt – siehe .env}:8080
+      # Verwaltung in der IUK-Suite (deploy/README.md, Schritt 9); leer = nur lokale Einstellungen.
+      LAGEMONITOR_SUITE_URL: ${LAGEMONITOR_SUITE_URL:-}
+      LAGEMONITOR_SUITE_TOKEN: ${LAGEMONITOR_SUITE_TOKEN:-}
     volumes:
       - ./data:/data
     restart: unless-stopped

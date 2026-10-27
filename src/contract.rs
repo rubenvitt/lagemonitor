@@ -144,6 +144,96 @@ pub struct MapInfo {
     pub offline: bool,
 }
 
+/// Welche Teile der Monitor zeigt. Das Warnband ist kein Modul: Amtliche Warnungen über der
+/// Schwelle brechen immer durch (Spec 4.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct Modules {
+    pub weather: bool,
+    pub radar: bool,
+    pub warning_areas: bool,
+    pub warning_list: bool,
+    pub suchlage: bool,
+}
+
+impl Default for Modules {
+    fn default() -> Self {
+        Self {
+            weather: true,
+            radar: true,
+            warning_areas: true,
+            warning_list: true,
+            suchlage: false,
+        }
+    }
+}
+
+/// Woher die Einstellungen kommen. `fromSuite: false`: nur die lokale Tabelle `settings`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct ConfigState {
+    pub from_suite: bool,
+    /// Letzte erfolgreiche Abholung aus der IUK-Suite.
+    #[ts(type = "number | null")]
+    pub fetched_at_ms: Option<i64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct SuchlageMission {
+    pub name: String,
+    pub location: Option<String>,
+    /// Aktiver Abschnitt.
+    pub section: Option<String>,
+    #[ts(type = "number | null")]
+    pub started_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct SuchlageAircraft {
+    pub gateway_sn: String,
+    pub label: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub heading_deg: Option<f64>,
+    /// Höhe über dem Startpunkt.
+    pub elevation_m: Option<f64>,
+    pub battery_percent: Option<u8>,
+    pub airborne: bool,
+}
+
+/// Ein laufendes Livebild; abgespielt über `/api/suchlage/video/{gatewaySn}/…`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct SuchlageVideo {
+    pub gateway_sn: String,
+    pub label: Option<String>,
+}
+
+/// Der laufende Suchlage-Einsatz, schon nach den eingestellten Teilen gefiltert: Was ausgeschaltet
+/// ist, kommt leer an. `mission: null` heißt: kein Einsatz läuft.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct SuchlageView {
+    pub mission: Option<SuchlageMission>,
+    /// GeoJSON-FeatureCollection der gezeichneten Gebiete; `properties.color` als `#RRGGBB`.
+    #[ts(type = "unknown")]
+    pub areas: serde_json::Value,
+    /// GeoJSON-FeatureCollection der Flugspuren; `properties.flightId`, `properties.running`.
+    #[ts(type = "unknown")]
+    pub tracks: serde_json::Value,
+    pub aircraft: Vec<SuchlageAircraft>,
+    pub video: Option<SuchlageVideo>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../frontend/src/contract/")]
@@ -156,4 +246,8 @@ pub struct MonitorView {
     pub weather: Sourced<Weather>,
     pub warnings: Sourced<Vec<Warning>>,
     pub map: MapInfo,
+    pub modules: Modules,
+    pub config: ConfigState,
+    /// `null`, wenn das Modul aus oder Suchlage nicht verbunden ist.
+    pub suchlage: Option<Sourced<SuchlageView>>,
 }

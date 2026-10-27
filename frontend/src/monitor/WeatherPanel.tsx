@@ -32,19 +32,20 @@ const temp = (t: number | null) => (t === null ? '–' : `${Math.round(t)}°`);
 const kmh = (v: number | null) => (v === null ? '–' : `${Math.round(v)} km/h`);
 
 interface Props {
-  weather: Sourced<Weather>;
+  /** `null`: Wetter ist ausgeschaltet, das Paneel trägt nur die Warnliste. */
+  weather: Sourced<Weather> | null;
   label: string;
   /** Warnungen unter der Schwelle. */
   listed: Warning[];
 }
 
 export default function WeatherPanel({ weather, label, listed }: Props) {
-  const data = weather.data;
+  const data = weather?.data;
   const c = data?.current;
   return (
     <section className="lm-paneel lm-wetter">
-      <div className="lm-augenbraue">Wetter · {label}</div>
-      {!c ? (
+      {weather && <div className="lm-augenbraue">Wetter · {label}</div>}
+      {!weather ? null : !c ? (
         <div className="lm-leer">Noch keine Daten</div>
       ) : (
         <>
@@ -82,7 +83,7 @@ export default function WeatherPanel({ weather, label, listed }: Props) {
       )}
       {listed.length > 0 && (
         <>
-          <div className="lm-augenbraue lm-abstand">Weitere Warnungen</div>
+          <div className={weather ? 'lm-augenbraue lm-abstand' : 'lm-augenbraue'}>Weitere Warnungen</div>
           {listed.map((w) => (
             <div key={w.id} className="lm-zeile lm-zeile-achtung">
               <span>{w.event}</span>

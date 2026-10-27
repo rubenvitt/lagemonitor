@@ -71,7 +71,9 @@ Monitor, Widgets, Konfiguration und Datenabruf laufen auf dem FüKw-Server. Ohne
 - Admin funktioniert nur bei bestehender Internetverbindung. Das reicht, weil die Sitzung lang hält, Richtwert 14 Tage. Sie wird lokal geprüft und braucht Pocket ID nur beim Anmelden.
 
 ### 4.4 Admin-UI
-Die Admin-UI ist **Teil des Lagemonitors**, nicht der iuk-suite. Dort gibt es nur eine Kachel bzw. einen Link im Portal, und der Login ist derselbe (Pocket ID). Begründung: Läge die Konfiguration in der Suite in der Cloud, müsste sie in den FüKw synchronisiert werden. Ohne Internet hätte der FüKw dann einen veralteten Stand.
+Die Admin-UI ist **Teil der iuk-suite** (Modul „Lagemonitor“), mit Vorschau samt Beispieldaten. *Geändert am 27.10.2026 auf Wunsch von Ruben (LGM-5);* vorher stand hier: Admin im Lagemonitor, in der Suite nur ein Link.
+
+Der Einwand von damals bleibt richtig und ist so gelöst: Der Lagemonitor **holt** die Konfiguration jede Minute aus der Suite (`GET /api/konfiguration`, Zugangsschlüssel als Bearer) und schreibt sie in seine Tabelle `settings`. Ohne Internet läuft er mit dem letzten Stand weiter; der Fuß zeigt dann, dass die Abholung scheitert. Ohne Suite-Adresse gilt allein die lokale Tabelle.
 
 ### 4.5 Relevanz statt Karussell
 Jedes Widget meldet selbst, ob es gerade etwas zu sagen hat, und mit welcher Dringlichkeit. Das Layout gibt dringlichen Widgets mehr Platz und lässt Widgets ohne Inhalt zurücktreten. Der Rahmen (Kopfzeile mit Uhr und Status, Fußzeile mit Datenstand) ist immer sichtbar. Die Admin-UI kann pinnen, ausblenden, sortieren und eine Ansicht erzwingen. Ruhe und Schaufenster sind die Zustände, wenn nichts anliegt.

@@ -2,11 +2,13 @@ import { render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import { useMonitor } from '../api';
 import MonitorPage from './MonitorPage';
-import { makeView } from './testViews';
+import { makeSuchlage, makeView, makeWarning } from './testViews';
 
 // maplibre läuft nicht in jsdom; die Karte ist hier nicht Gegenstand.
 vi.mock('./MapPanel', () => ({ default: () => null }));
 vi.mock('../api', () => ({ useMonitor: vi.fn() }));
+// WebRTC gibt es in jsdom nicht; der Player hat eigene Tests in Suchlage.
+vi.mock('../video/usePlayer', () => ({ usePlayer: () => ({ kind: 'playing', transport: 'webrtc', attempt: 1 }) }));
 
 type Query = ReturnType<typeof useMonitor>;
 const answer = (q: Partial<Query>) =>
@@ -44,4 +46,69 @@ test('pausierte Abfrage (Netz weg, kein Fehler): nach 90 s veraltet', () => {
   render(<MonitorPage />);
   expect(screen.getByText(/^Warnstand veraltet/)).toBeInTheDocument();
   expect(screen.getByText(/^Veraltet · Stand/)).toBeInTheDocument();
+});
+
+const withSuchlage = (over: Parameters<typeof makeSuchlage>[0] = {}, stale = false) =>
+  makeView({
+    modules: { weather: true, radar: true, warningAreas: true, warningList: true, suchlage: true },
+    suchlage: { data: makeSuchlage(over), fetchedAtMs: Date.now(), stale, error: null },
+  });
+
+test('laufender Suchlage-Einsatz: Status nennt ihn, Drohnenbild fährt ein', () => {
+  answer({ data: withSuchlage(), dataUpdatedAt: Date.now() });
+  render(<MonitorPage />);
+  expect(screen.getByText('SUCHLAGE · Vermisste Person Oldenstadt')).toBeInTheDocument();
+  const panel = screen.getByLabelText('Drohnenbild');
+  expect(panel).toHaveAttribute('data-offen', 'true');
+  expect(screen.getByText('Drohnenbild · Drohne 1')).toBeInTheDocument();
+  expect(screen.getByText('Höhe 60 m')).toBeInTheDocument();
+  expect(screen.getByText('Suchlage · Einsatz läuft')).toBeInTheDocument();
+});
+
+test('ohne Livebild bleibt das Drohnenbild draußen', () => {
+  answer({ data: withSuchlage({ video: null }), dataUpdatedAt: Date.now() });
+  render(<MonitorPage />);
+  expect(screen.getByLabelText('Drohnenbild', { selector: 'section' })).toHaveAttribute('data-offen', 'false');
+});
+
+test('veralteter Suchlage-Stand: kein eingefrorenes Bild, Fuß meldet es', () => {
+  answer({ data: withSuchlage({}, true), dataUpdatedAt: Date.now() });
+  render(<MonitorPage />);
+  expect(screen.getByLabelText('Drohnenbild', { selector: 'section' })).toHaveAttribute('data-offen', 'false');
+  expect(screen.getByText(/^Suchlage veraltet/)).toBeInTheDocument();
+});
+
+test('eine Warnung über der Schwelle geht dem Einsatz im Status vor', () => {
+  const view = withSuchlage();
+  view.warnings.data = [makeWarning({ severity: 'Severe', levelLabel: 'Stufe 3' })];
+  answer({ data: view, dataUpdatedAt: Date.now() });
+  render(<MonitorPage />);
+  expect(screen.getByText('1 WARNUNG · Stufe 3')).toBeInTheDocument();
+});
+
+test('ohne Einsatz kein Suchlage-Status', () => {
+  answer({ data: withSuchlage({ mission: null, video: null }), dataUpdatedAt: Date.now() });
+  render(<MonitorPage />);
+  expect(screen.getByText('RUHE · keine Warnungen')).toBeInTheDocument();
+  expect(screen.getByText('Suchlage · kein Einsatz')).toBeInTheDocument();
+});
+
+test('Wetter aus: keine Wetterspalte, Karte über die volle Breite', () => {
+  answer({
+    data: makeView({ modules: { weather: false, radar: true, warningAreas: true, warningList: true, suchlage: false } }),
+    dataUpdatedAt: Date.now(),
+  });
+  const { container } = render(<MonitorPage />);
+  expect(screen.queryByText(/^Wetter ·/)).toBeNull();
+  expect(container.querySelector('.lm-spalten')).toHaveAttribute('data-seitenspalte', 'false');
+  expect(screen.queryByLabelText('Drohnenbild')).toBeNull();
+});
+
+test('Konfiguration aus der Suite: Fuß nennt Herkunft, Fehler fällt auf', () => {
+  answer({
+    data: makeView({ config: { fromSuite: true, fetchedAtMs: Date.now(), error: 'Abruf fehlgeschlagen' } }),
+    dataUpdatedAt: Date.now(),
+  });
+  render(<MonitorPage />);
+  expect(screen.getByText(/^Konfiguration aus IUK-Suite nicht abholbar/)).toHaveClass('lm-fuss-alarm');
 });

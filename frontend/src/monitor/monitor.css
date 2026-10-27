@@ -78,6 +78,9 @@
 .lm-ton-alarm {
   color: var(--lfh-alarm-text);
 }
+.lm-ton-einsatz {
+  color: var(--lfh-bedien-text);
+}
 .lm-uhr {
   margin-left: auto;
   font-size: 26px;
@@ -97,6 +100,12 @@
   grid-template-columns: 2.2fr 1fr;
   gap: 1px;
   min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+/* Wetter und Warnliste ausgeschaltet: die Karte nimmt die ganze Breite. */
+.lm-spalten[data-seitenspalte='false'] {
+  grid-template-columns: 1fr;
 }
 .lm-paneel {
   background: var(--lfh-flaeche);
@@ -214,6 +223,70 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
+}
+
+/* ── Drohnenbild ─────────────────────────────────────────────────────────
+   Fährt von rechts über die Wetterspalte ein; Breite = DROHNE_ANTEIL in suchlageData.ts. */
+.lm-drohne {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 46%;
+  display: flex;
+  flex-direction: column;
+  background: var(--lfh-rahmen-grund);
+  color: var(--lfh-rahmen-text);
+  border-left: 1px solid var(--lfh-rahmen-linie);
+  transform: translateX(calc(100% + 24px));
+  transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: -18px 0 36px rgba(0, 0, 0, 0.35);
+  /* Über den Bedienelementen der Karte (maplibre: z-index 2), sonst liegt die Attribution auf dem Bild. */
+  z-index: 3;
+}
+.lm-drohne[data-offen='true'] {
+  transform: translateX(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lm-drohne {
+    transition: none;
+  }
+}
+.lm-drohne-kopf {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 18px;
+}
+.lm-drohne-kopf .lm-augenbraue {
+  color: var(--lfh-rahmen-gedaempft);
+}
+.lm-drohne-live {
+  font-family: var(--lfh-schrift-zahl);
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--lfh-achtung-text);
+}
+.lm-drohne-live[data-live='true'] {
+  color: var(--lfh-alarm-text);
+}
+.lm-drohne-bild {
+  flex: 1;
+  min-height: 0;
+  background: #000;
+  display: grid;
+}
+.lm-drohne-bild video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.lm-drohne-werte {
+  display: flex;
+  gap: 28px;
+  padding: 12px 18px;
+  font-size: 20px;
 }
 
 /* ── Fuß ──────────────────────────────────────────────────────────────── */

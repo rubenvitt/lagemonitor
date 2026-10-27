@@ -4,9 +4,15 @@ import type { Layout } from './selectLayout';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Status als Wort und Ton. „keine Warnungen“ nur, wenn der Warnstand bekannt, frisch und leer ist. */
-function status(layout: Layout, fetchedAtMs: number | null): { text: string; tone: 'normal' | 'achtung' | 'alarm' } {
+type Tone = 'normal' | 'achtung' | 'alarm' | 'einsatz';
+
+/**
+ * Status als Wort und Ton. „keine Warnungen“ nur, wenn der Warnstand bekannt, frisch und leer ist.
+ * Eine Warnung über der Schwelle geht dem Suchlage-Einsatz vor, eine unbekannte Warnlage nicht.
+ */
+function status(layout: Layout, fetchedAtMs: number | null, einsatz: string | null): { text: string; tone: Tone } {
   const { band, listed, warnState } = layout;
+  if (einsatz !== null && band.length === 0) return { text: `SUCHLAGE · ${einsatz}`, tone: 'einsatz' };
   if (band.length > 0) {
     const text = `${plural(band.length, 'WARNUNG', 'WARNUNGEN')} · ${band[0].levelLabel}`;
     return { text: warnState === 'stale' ? `${text} · veraltet` : text, tone: 'alarm' };
@@ -29,7 +35,8 @@ interface Props {
 }
 
 export default function Header({ view, layout, nowMs, note }: Props) {
-  const { text, tone } = status(layout, view?.warnings.fetchedAtMs ?? null);
+  const mission = view?.suchlage?.data?.mission;
+  const { text, tone } = status(layout, view?.warnings.fetchedAtMs ?? null, mission ? mission.name : null);
   return (
     // Der Kopf liegt im Rahmen und bleibt dunkel; Statusfarben daher immer aus dem dunklen Satz.
     <header className="lm-kopf" data-theme="dark">

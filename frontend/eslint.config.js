@@ -21,7 +21,7 @@ export default tseslint.config(
   },
   // Kartenfarben sind eine eigene Palette (wie in Lifeline), keine Farbrollen der Oberfläche.
   {
-    files: ['src/theme/**', 'src/components/instrument/**', 'src/map/basemapStyle.ts'],
+    files: ['src/theme/**', 'src/components/instrument/**', 'src/map/basemapStyle.ts', 'src/map/suchlageFarben.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 );
