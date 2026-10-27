@@ -3,6 +3,7 @@ use std::sync::Arc;
 use lagemonitor::app::{self, AppState};
 use lagemonitor::config::BootConfig;
 use lagemonitor::db;
+use lagemonitor::poller;
 use tokio::task::JoinSet;
 use tracing_subscriber::EnvFilter;
 
@@ -13,10 +14,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let boot = Arc::new(BootConfig::from_env()?);
     let pool = db::connect(&boot).await?;
-    let router = app::router(AppState {
-        pool,
-        boot: boot.clone(),
-    });
+    let state = AppState::new(pool, boot.clone()).await?;
+    poller::spawn(state.clone());
+    let router = app::router(state);
 
     let mut servers = JoinSet::new();
     for addr in &boot.binds {
