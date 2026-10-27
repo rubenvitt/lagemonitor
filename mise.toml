@@ -6,3 +6,11 @@ pnpm = "11.10.0"
 [tasks.check]
 description = "Qualitäts-Gate: Rust, Vertrag, Frontend"
 run = "scripts/check.sh"
+
+[tasks.dev]
+description = "Server lokal starten (Daten in ./data)"
+run = "cargo run"
+
+[tasks.image]
+description = "Betriebs-Image lokal bauen"
+run = "docker build -f deploy/Dockerfile -t lagemonitor:local ."

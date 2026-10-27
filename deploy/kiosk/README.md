@@ -27,10 +27,10 @@ sudo useradd -m -s /usr/sbin/nologin -G video,render,input kiosk
 ## 3. Adresse, die angezeigt wird
 
 ```bash
-echo 'KIOSK_URL=https://www.dwd.de/DE/wetter/warnungen_gemeinden/warnWetter_node.html' | sudo tee /etc/default/lagemonitor-kiosk
+echo 'KIOSK_URL=http://127.0.0.1:8080' | sudo tee /etc/default/lagemonitor-kiosk
 ```
 
-Zum Testen ist hier die DWD-Warnkarte eingetragen. Sobald der Lagemonitor läuft, ersetzt du sie durch `KIOSK_URL=http://127.0.0.1:<port>` und startest den Dienst neu (Schritt 6).
+Das ist die Adresse des Lagemonitors auf demselben Server. Er muss vorher laufen, siehe [`../README.md`](../README.md). Falls du den Kiosk vorab testen willst, trage stattdessen eine beliebige Webseite ein, etwa `https://www.dwd.de`, und ändere die Zeile später. Danach startest du den Dienst neu (Schritt 6).
 
 ## 4. PAM-Profil
 

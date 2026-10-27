@@ -1,0 +1,10 @@
+services:
+  lagemonitor:
+    image: ghcr.io/rubenvitt/lagemonitor:latest
+    # Host-Netz, damit LAGEMONITOR_BIND echte Adressen des Servers bindet.
+    network_mode: host
+    environment:
+      LAGEMONITOR_BIND: 127.0.0.1:8080,${LAN_IP}:8080
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
