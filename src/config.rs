@@ -33,9 +33,16 @@ impl BootConfig {
         let binds = bind_raw
             .split(',')
             .map(|part| {
-                part.trim()
+                let addr: SocketAddr = part
+                    .trim()
                     .parse()
-                    .map_err(|e: std::net::AddrParseError| bind_error(e.to_string()))
+                    .map_err(|e: std::net::AddrParseError| bind_error(e.to_string()))?;
+                if addr.ip().is_unspecified() {
+                    return Err(bind_error(format!(
+                        "{addr} würde auf allen Schnittstellen lauschen – bitte konkrete Adressen angeben"
+                    )));
+                }
+                Ok(addr)
             })
             .collect::<Result<Vec<SocketAddr>, _>>()?;
         Ok(Self { data_dir, binds })
@@ -87,5 +94,13 @@ mod tests {
     fn invalid_bind_names_variable() {
         let err = BootConfig::from_lookup(lookup(&[("LAGEMONITOR_BIND", "nirgends")])).unwrap_err();
         assert_eq!(err.var, "LAGEMONITOR_BIND");
+    }
+
+    #[test]
+    fn unspecified_bind_is_rejected() {
+        for bad in ["0.0.0.0:8080", "[::]:8080", "127.0.0.1:8080,0.0.0.0:8080"] {
+            let err = BootConfig::from_lookup(lookup(&[("LAGEMONITOR_BIND", bad)])).unwrap_err();
+            assert_eq!(err.var, "LAGEMONITOR_BIND", "{bad}");
+        }
     }
 }

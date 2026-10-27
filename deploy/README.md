@@ -125,7 +125,7 @@ services:
     # Host-Netz, damit LAGEMONITOR_BIND echte Adressen des Servers bindet.
     network_mode: host
     environment:
-      LAGEMONITOR_BIND: 127.0.0.1:8080,${LAN_IP}:8080
+      LAGEMONITOR_BIND: 127.0.0.1:8080,${LAN_IP:?LAN_IP fehlt – siehe .env}:8080
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -266,7 +266,11 @@ Ohne dieses Paket lädt die Karte ihre Kacheln aus dem Internet. Mit der Offline
 
 ## 9. Einstellungen ändern (Standort, Landkreis, Warnschwelle)
 
-Eine Verwaltungsseite gibt es noch nicht. Bis dahin änderst du die Werte direkt in der Datenbank. Dafür brauchst du das Programm `sqlite3` auf dem **Server** (nicht im Docker-Paket):
+Eine Verwaltungsseite gibt es noch nicht. Bis dahin änderst du die Werte direkt in der Datenbank.
+
+**Zuerst:** Der Lagemonitor muss mindestens einmal gelaufen sein (Schritt 5), denn er legt die Datenbank selbst an. Legt `sudo sqlite3` sie zuerst an, gehört sie dem Benutzer `root` und der Lagemonitor kann sie nicht öffnen. Reparieren: `sudo chown 65532:65532 /opt/lagemonitor/data/lagemonitor.db*`, dann `docker compose restart`.
+
+Du brauchst das Programm `sqlite3` auf dem **Server** (nicht im Docker-Paket):
 
 ```bash
 sudo apt install -y sqlite3
@@ -307,7 +311,7 @@ docker compose restart
 sudo sqlite3 /opt/lagemonitor/data/lagemonitor.db "SELECT key, value FROM settings;"
 ```
 
-Die Ausgabe enthält deine neuen Werte, zum Beispiel `warn_threshold|"Moderate"`. Wenn die Datenbank noch nicht existiert, starte den Lagemonitor einmal (Schritt 5). Dann legt er sie an.
+Die Ausgabe enthält deine neuen Werte, zum Beispiel `warn_threshold|"Moderate"`. 
 
 ---
 
@@ -323,6 +327,7 @@ docker compose logs -f
 | Meldung / Problem | Ursache und Lösung |
 |---|---|
 | `denied` oder `unauthorized` beim Herunterladen | Der Token ist abgelaufen oder falsch. Neuen Token anlegen (Schritt 2) und `docker login ghcr.io -u rubenvitt` wiederholen. |
+| `LAN_IP fehlt` | Die Datei `.env` fehlt (Schritt 4). |
 | `address already in use` | Auf Port 8080 läuft schon etwas anderes. Mit `sudo ss -ltnp \| grep 8080` siehst du, was. Das andere Programm beenden oder umstellen. |
 | `cannot assign requested address` oder der Dienst startet nicht | `LAN_IP` in `/opt/lagemonitor/.env` stimmt nicht. Mit `ip -4 addr` die Adresse neu ermitteln, `.env` korrigieren, dann `docker compose up -d`. |
 | `variable is not set` / `LAN_IP` leer | Die Datei `.env` fehlt oder liegt im falschen Ordner. Sie muss neben `compose.yaml` in `/opt/lagemonitor` liegen. |

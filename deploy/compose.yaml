@@ -4,7 +4,7 @@ services:
     # Host-Netz, damit LAGEMONITOR_BIND echte Adressen des Servers bindet.
     network_mode: host
     environment:
-      LAGEMONITOR_BIND: 127.0.0.1:8080,${LAN_IP}:8080
+      LAGEMONITOR_BIND: 127.0.0.1:8080,${LAN_IP:?LAN_IP fehlt – siehe .env}:8080
     volumes:
       - ./data:/data
     restart: unless-stopped
