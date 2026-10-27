@@ -1,0 +1,248 @@
+/* Monitor-Ansicht nach docs/design/2026-10-27-zustaende.html (Zustände A und B), ausgelegt für
+   1920 × 1080 aus einigen Metern Abstand. Farben nur über Rollen (`--lfh-*`). */
+
+.lm {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 44px 1fr 26px;
+  gap: 1px;
+  background: var(--lfh-linie);
+  color: var(--lfh-text);
+  font-family: var(--lfh-schrift-text);
+  font-size: 20px;
+  overflow: hidden;
+}
+
+.lm-zahl,
+.lm-wortmarke,
+.lm-status,
+.lm-uhr,
+.lm-fuss,
+.lm-gross,
+.lm-band-meta,
+.lm-vorhersage {
+  font-family: var(--lfh-schrift-zahl);
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-augenbraue {
+  font-size: 13px;
+  font-weight: var(--lfh-typo-augenbraue-gewicht);
+  letter-spacing: var(--lfh-typo-augenbraue-sperrung);
+  text-transform: uppercase;
+  color: var(--lfh-gedaempft);
+}
+
+/* ── Kopf ─────────────────────────────────────────────────────────────── */
+.lm-kopf {
+  background: var(--lfh-rahmen-grund);
+  color: var(--lfh-rahmen-text);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-right: 18px;
+}
+.lm-marke {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: var(--lfh-rahmen-marke);
+  font-family: var(--lfh-schrift-display);
+  font-weight: 600;
+  font-size: 22px;
+}
+.lm-wortmarke {
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+.lm-status {
+  font-size: 15px;
+  font-weight: 600;
+}
+.lm-punkt {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background: currentColor;
+}
+.lm-ton-normal {
+  color: var(--lfh-normal-text);
+}
+.lm-ton-achtung {
+  color: var(--lfh-achtung-text);
+}
+.lm-ton-alarm {
+  color: var(--lfh-alarm-text);
+}
+.lm-uhr {
+  margin-left: auto;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+/* ── Rumpf ────────────────────────────────────────────────────────────── */
+.lm-rumpf {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+}
+.lm-spalten {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 1px;
+  min-height: 0;
+}
+.lm-paneel {
+  background: var(--lfh-flaeche);
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.lm-leer {
+  color: var(--lfh-achtung-text);
+}
+
+/* ── Warnband ─────────────────────────────────────────────────────────── */
+.lm-band {
+  background: var(--lfh-alarm-fuellung-stark);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 22px;
+}
+.lm-band-kuerzel {
+  background: var(--lfh-alarm);
+  color: var(--lfh-auf-bedien);
+  padding: 4px 10px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lm-band-titel {
+  font-size: 32px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-band-meta {
+  margin-left: auto;
+  color: var(--lfh-alarm-text);
+  font-size: 18px;
+  white-space: nowrap;
+  display: flex;
+  gap: 18px;
+}
+.lm-band-weitere {
+  font-weight: 600;
+}
+
+/* ── Karte ────────────────────────────────────────────────────────────── */
+.lm-karte {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+}
+.lm-karte-flaeche {
+  position: absolute;
+  inset: 0;
+}
+.lm-karte-legende {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  padding: 8px 12px;
+  background: var(--lfh-rahmen-grund);
+  font-size: 15px;
+}
+
+/* ── Wetter ───────────────────────────────────────────────────────────── */
+.lm-wetter-jetzt {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  font-size: 26px;
+}
+.lm-gross {
+  font-size: 96px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.lm-zeile {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--lfh-linie);
+  padding-top: 8px;
+}
+.lm-zeile-achtung {
+  background: var(--lfh-achtung-fuellung);
+  padding: 8px;
+}
+.lm-zeile-achtung .lm-zahl {
+  color: var(--lfh-achtung-text);
+}
+.lm-abstand {
+  margin-top: 14px;
+}
+.lm-vorhersage {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--lfh-linie);
+  margin-top: 8px;
+}
+.lm-vorhersage > div {
+  background: var(--lfh-flaeche-2);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Fuß ──────────────────────────────────────────────────────────────── */
+.lm-fuss {
+  background: var(--lfh-rahmen-grund);
+  color: var(--lfh-rahmen-gedaempft);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+.lm-fuss-alarm {
+  background: var(--lfh-achtung);
+  color: var(--lfh-auf-bedien);
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+/* ── Ohne Antwort vom Server ──────────────────────────────────────────── */
+.lm-hinweis {
+  display: grid;
+  place-items: center;
+  background: var(--lfh-flaeche);
+  font-size: 28px;
+  color: var(--lfh-gedaempft);
+}
+
+/* maplibres Quellenangabe ist hell; auf dem Nachtbildschirm wäre sie der hellste Fleck. */
+.lm .maplibregl-ctrl-attrib {
+  background: var(--lfh-rahmen-grund);
+  color: var(--lfh-rahmen-gedaempft);
+}
+.lm .maplibregl-ctrl-attrib a {
+  color: inherit;
+}
