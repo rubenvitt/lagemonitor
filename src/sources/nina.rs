@@ -1,14 +1,10 @@
 //! NINA-Warnungen: Dashboard je Regionalschlüssel, CAP-Details und GeoJSON je Warnung.
 
-use std::time::Duration;
-
 use reqwest::Url;
 use serde::Deserialize;
 
-use super::SourceError;
+use super::{SourceError, endpoint, get_bytes};
 use crate::contract::{Provider, Severity, Warning};
-
-const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Deserialize)]
 struct DashboardEntry {
@@ -154,31 +150,6 @@ pub fn parse_warning(
         sender_name: info.sender_name,
         geometry: parse_geometry(geojson),
     })
-}
-
-async fn get_bytes(http: &reqwest::Client, url: Url) -> Result<Vec<u8>, SourceError> {
-    let res = http
-        .get(url.clone())
-        .timeout(TIMEOUT)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| SourceError::Http(format!("{url}: {e}")))?;
-    let bytes = res
-        .bytes()
-        .await
-        .map_err(|e| SourceError::Http(format!("{url}: {e}")))?;
-    Ok(bytes.to_vec())
-}
-
-fn endpoint(base: &Url, path: &str) -> Result<Url, SourceError> {
-    // Ein Basispfad wie `/api31` bleibt nur mit abschließendem Slash erhalten.
-    let mut base = base.clone();
-    if !base.path().ends_with('/') {
-        base.set_path(&format!("{}/", base.path()));
-    }
-    base.join(path)
-        .map_err(|e| SourceError::Http(format!("URL {path}: {e}")))
 }
 
 async fn fetch_one(

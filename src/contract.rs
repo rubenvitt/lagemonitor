@@ -63,3 +63,36 @@ pub struct Warning {
     #[ts(type = "unknown")]
     pub geometry: Option<serde_json::Value>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct CurrentWeather {
+    pub timestamp: String,
+    pub temperature: Option<f64>,
+    pub condition: Option<String>,
+    pub icon: Option<String>,
+    pub wind_speed: Option<f64>,
+    pub wind_gust_speed: Option<f64>,
+    pub wind_direction: Option<f64>,
+    pub precipitation: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct HourlyWeather {
+    pub timestamp: String,
+    pub temperature: Option<f64>,
+    pub icon: Option<String>,
+    pub precipitation: Option<f64>,
+}
+
+/// `hourly`: die nächsten 12 Stunden ab jetzt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct Weather {
+    pub current: CurrentWeather,
+    pub hourly: Vec<HourlyWeather>,
+}
