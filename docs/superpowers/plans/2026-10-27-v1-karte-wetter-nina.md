@@ -67,7 +67,7 @@ pub struct MonitorView { now_ms: i64, location: Location, region: Region, warn_t
 
 **Files:**
 - Create: `Cargo.toml`, `rust-toolchain.toml`, `mise.toml`, `.cargo/config.toml` (nur falls Suchlage eine hat – übernehmen), `build.rs` (wie Suchlage: legt `frontend/dist/.gitkeep` an, damit rust-embed ohne Build kompiliert), `frontend/dist/.gitkeep`
-- Create: `src/main.rs`, `src/lib.rs`, `src/config.rs`, `src/app.rs`, `src/error.rs`, `src/db.rs`, `src/settings.rs`, `src/static_files.rs`, `src/contract.rs`
+- Create: `src/main.rs`, `src/lib.rs`, `src/config.rs`, `src/app.rs`, `src/error.rs`, `src/db.rs`, `src/settings.rs`, `src/static_files.rs`, `src/contract.rs`, `src/sources/mod.rs` (nur `SourceError` und `pub mod`-Zeilen für `nina`/`weather`, die Task 2/3 füllen)
 - Create: `migrations/0001_init.sql`, `scripts/check.sh`
 - Modify: `.gitignore` (`frontend/dist/*` + `!frontend/dist/.gitkeep`)
 
@@ -77,6 +77,7 @@ pub struct MonitorView { now_ms: i64, location: Location, region: Region, warn_t
 - Produces: `settings::Settings { location: Location, region: Region, warn_threshold: Severity }`, `settings::load(&SqlitePool) -> Result<Settings, AppError>` (fehlende Schlüssel → Standardwerte)
 - Produces: `app::AppState { pool: SqlitePool, boot: Arc<BootConfig>, … }` (Task 4 ergänzt Felder), `app::router(AppState) -> Router` mit `/api/health` und SPA-Fallback
 - Produces: in `contract.rs` die Typen `Severity`, `Location`, `Region` (Rest in Task 2–4)
+- Produces: `sources::SourceError` (thiserror: `Http(String)`, `Parse(String)`)
 
 Tabellen in `0001_init.sql`:
 ```sql
@@ -103,25 +104,27 @@ Standardwerte (Schlüssel → JSON): `location` → `{"lat":52.9656,"lon":10.559
 ### Task 2: NINA-Quelle
 
 **Files:**
-- Create: `src/sources/mod.rs`, `src/sources/nina.rs`, `tests/fixtures/nina/` (mitgeschnittene Antworten)
+- Create: `src/sources/nina.rs`, `tests/fixtures/nina/` (mitgeschnittene Antworten)
 - Modify: `src/contract.rs` (+ `Provider`, `Warning`), `src/lib.rs`
 
 **Interfaces:**
 - Consumes: `Severity`, `Region` aus Task 1
 - Produces: `nina::fetch(http: &reqwest::Client, base: &Url, ars: &str) -> Result<Vec<Warning>, SourceError>`; reine Hilfen `nina::parse_dashboard(&[u8]) -> Result<Vec<String>, SourceError>` (liefert IDs), `nina::parse_warning(id: &str, cap: &[u8], geojson: Option<&[u8]>) -> Result<Warning, SourceError>`, `nina::provider_of(id: &str) -> Provider`, `nina::level_label(Provider, Severity) -> String`
-- Produces: `sources::SourceError` (thiserror: `Http(String)`, `Parse(String)`)
+- Consumes: `sources::SourceError` aus Task 1
+
+Format geprüft am 27.10.2026: `GET /dashboard/{ars}.json` liefert ein Array `[{ "id", "payload": { "data": { "headline", "provider", "severity", "msgType", "area", "valid" } }, "i18nTitle", … }]`. DWD-Warnungen stehen mit Präfix `dwd.` darin (in `mapData` dagegen `dwdmap.`). `payload.data.provider` ist `"DWD"`, `"MOWAS"`, `"LHP"`, `"KATWARN"`, `"BIWAPP"` oder `"POLICE"`. Für diese IDs liefern `/warnings/{id}.json` und `/warnings/{id}.geojson` 200. Regionen mit Einträgen am 27.10.: LK Harz `150850000000` (DWD), Saarlouis `100440000000` (MoWaS).
 
 Ablauf von `fetch`: `GET {base}/dashboard/{ars}.json` → IDs; je ID `GET {base}/warnings/{id}.json` (CAP, Felder aus `info[0]`: `event`, `headline`, `description`, `instruction`, `severity`, `onset`, `expires`, `senderName`) und `GET {base}/warnings/{id}.geojson`. GeoJSON-Fehler (404, Timeout, leer) → `geometry: None`, Warnung bleibt. Timeout pro Anfrage 10 s.
 
 Zuordnungen:
-- `provider_of`: Präfix `dwd` → Dwd, `mow` → Mowas, `kat` → Katwarn, `biw` → Biwapp, `lhp` → Lhp, `pol` → Police; sonst Mowas.
+- Provider: zuerst `payload.data.provider` (Groß-/Kleinschreibung egal) aus dem Dashboard; fehlt er, `provider_of(id)` nach Präfix `dwd` → Dwd, `mow` → Mowas, `kat` → Katwarn, `biw` → Biwapp, `lhp` → Lhp, `pol` → Police; sonst Mowas. `parse_dashboard` liefert deshalb `Vec<(String, Option<Provider>)>`, und `parse_warning` bekommt den Provider als Parameter `provider: Option<Provider>`.
 - `level_label`: Dwd: Minor „Stufe 1“, Moderate „Stufe 2“, Severe „Stufe 3“, Extreme „Stufe 4“, Unknown „Unbekannt“. Alle anderen: Minor „Gering“, Moderate „Mittel“, Severe „Hoch“, Extreme „Extrem“, Unknown „Unbekannt“.
 - CAP-`severity` außerhalb der fünf Werte → `Unknown`.
 
-- [ ] **Step 1: Fixtures mitschneiden.** Das Dashboard für `033600000000` ist oft leer. Ein Dashboard mit Einträgen finden: `GET https://warnung.bund.de/api31/dwd/mapData.json` und `/mowas/mapData.json` liefern aktuelle IDs; für eine davon CAP (`/warnings/{id}.json`) und GeoJSON speichern. Für ein Dashboard mit Einträgen Landkreis-ARS durchprobieren (`<5-stelliger Kreisschlüssel>0000000`) bis eines nicht `[]` ist, und speichern. Dazu ein leeres Dashboard. Ablage: `tests/fixtures/nina/{dashboard-leer,dashboard-voll,cap-dwd,cap-mowas,geojson-dwd}.json`. Stimmt das Dashboard-Format nicht mit der Annahme „Array von Objekten mit `id`“ überein, `parse_dashboard` an das echte Format anpassen und das im Commit vermerken.
+- [ ] **Step 1: Fixtures mitschneiden.** Leer: `033600000000` (Uelzen, meist `[]`). Voll: die Regionen oben; sind sie inzwischen leer, über `GET /dwd/mapData.json` bzw. `/mowas/mapData.json` eine aktuelle Warnung suchen und Kreis-ARS (`<5-stelliger Kreisschlüssel>0000000`) durchprobieren, bis das Dashboard nicht `[]` ist. Dazu je eine CAP (DWD, MoWaS) und ein GeoJSON. Ablage: `tests/fixtures/nina/{dashboard-leer,dashboard-voll,cap-dwd,cap-mowas,geojson-dwd}.json`.
 - [ ] **Step 2: Failing tests**
   - `empty_dashboard_yields_no_ids` → `[]`
-  - `dashboard_yields_ids` → IDs aus dem vollen Fixture, Anzahl = Einträge
+  - `dashboard_yields_ids` → IDs aus dem vollen Fixture, Anzahl = Einträge, Provider aus `payload.data.provider`
   - `parses_dwd_cap` → `provider == Dwd`, `event`, `headline`, `severity`, `level_label == "Stufe 2"` (bei Moderate), `onset`/`expires` gesetzt, `geometry.is_some()`
   - `parses_mowas_cap_level_words` → `level_label` ist ein Wort aus der Liste
   - `warning_without_geojson_is_kept` → `parse_warning(id, cap, None)` ergibt `geometry: None`
@@ -139,7 +142,7 @@ Zuordnungen:
 - Modify: `src/contract.rs` (+ `CurrentWeather`, `HourlyWeather`, `Weather`)
 
 **Interfaces:**
-- Consumes: `Location` aus Task 1, `SourceError` aus Task 2 (Task 2 und 3 können parallel laufen; wer zuerst fertig ist, legt `sources/mod.rs` mit `SourceError` an, der andere übernimmt)
+- Consumes: `Location` und `SourceError` aus Task 1
 - Produces: `weather::fetch(http, base: &Url, loc: &Location, now: DateTime<Utc>) -> Result<Weather, SourceError>`; rein: `weather::parse_current(&[u8]) -> Result<CurrentWeather, SourceError>`, `weather::parse_hourly(&[u8], now) -> Result<Vec<HourlyWeather>, SourceError>`
 
 Anfragen: `GET {base}/current_weather?lat=..&lon=..` (Felder: `timestamp`, `temperature`, `condition`, `icon`, `wind_speed_10`, `wind_gust_speed_10`, `wind_direction_10`, `precipitation_10`) und `GET {base}/weather?lat=..&lon=..&date=<now>&last_date=<now+13h>` (je Eintrag `timestamp`, `temperature`, `icon`, `precipitation`). `hourly` = Einträge mit `timestamp > now`, höchstens 12.
@@ -190,7 +193,7 @@ Regeln:
 
 ### Task 5: Frontend-Gerüst mit Lifeline-Designsystem und Grundkarte
 
-Kann parallel zu Task 2–4 laufen (braucht nur den Vertrag aus dem Plan; bis Task 4 die `.ts`-Dateien erzeugt, die Typen aus dem Abschnitt „Vertrag“ von Hand in `frontend/src/contract/` anlegen – Task 4 überschreibt sie).
+Läuft nach Task 4. Der Vertrag liegt dann schon unter `frontend/src/contract/`.
 
 **Files:**
 - Create: `frontend/package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.json`, `vite.config.ts`, `vitest.setup.ts`, `eslint.config.js`, `index.html`
@@ -218,12 +221,13 @@ Nur die Abhängigkeiten übernehmen, die gebraucht werden: `antd`, `react`, `rea
 
 **Interfaces:**
 - Consumes: `useMonitor()`, `basemapStyle`, Vertragstypen
-- Produces: `selectLayout(view: MonitorView, nowMs: number): { mode: 'ruhe' | 'warnung'; band: Warning[]; listed: Warning[] }`
+- Produces: `selectLayout(view: MonitorView, nowMs: number): { mode: 'ruhe' | 'warnung'; warnState: 'known' | 'stale' | 'unknown'; band: Warning[]; listed: Warning[] }`
 
 Regeln für `selectLayout`:
 - Abgelaufene Warnungen (`expires` vor `nowMs`) fallen ganz weg.
 - `band` = Warnungen mit `severity >= warnThreshold` (Reihenfolge Unknown < Minor < Moderate < Severe < Extreme; `Unknown` nie im Band), absteigend nach Schwere, bei Gleichstand frühestes `onset` zuerst. `listed` = der Rest, gleiche Sortierung.
 - `mode = band.length > 0 ? 'warnung' : 'ruhe'`.
+- Ergänzt: `selectLayout` liefert zusätzlich `warnState: 'known' | 'stale' | 'unknown'`. `unknown`, wenn `warnings.data === null`; `stale`, wenn `warnings.stale`. Der Kopf sagt nur bei `known` ohne Band „RUHE · keine Warnungen“. Bei `unknown` heißt es „WARNLAGE UNBEKANNT“, bei `stale` „Warnstand veraltet · HH:mm“, beides in Achtungsfarbe. Ein Band aus einem veralteten Stand bleibt sichtbar, der Kopf nennt dann zusätzlich „veraltet“. Wer kurz hochschaut, darf nie „keine Warnungen“ lesen, wenn das niemand weiß.
 
 Gestaltung nach `docs/design/2026-10-27-zustaende.html` (Zustände A und B; C entfällt in v1):
 - Kopf 44 px: Markenzelle, Wortmarke `LAGEMONITOR · <location.label>`, Statuspunkt mit Wort („RUHE · keine Warnungen“ / „<n> WARNUNG(EN) · <höchste levelLabel>“), Uhr `HH:mm:ss` sekündlich.
@@ -237,6 +241,7 @@ Gestaltung nach `docs/design/2026-10-27-zustaende.html` (Zustände A und B; C en
   - `selectLayout.test.ts`: `drops_expired_warnings`, `band_sorts_by_severity_and_counts_rest` (zwei Severe + ein Extreme → Extreme zuerst), `unknown_never_in_band`, `threshold_moderate_includes_moderate`, `ruhe_without_warnings`
   - `WarningBand.test.tsx`: zeigt `levelLabel` als Text (zweiter Kanal), „+1 weitere“ bei zwei Band-Warnungen
   - `Footer.test.tsx`: `shows_no_data_hint` (data null → „Noch keine Daten“), `shows_stale` (stale → „Veraltet“)
+  - `Header.test.tsx`: `unknown_warnings_never_say_none` (data null → „WARNLAGE UNBEKANNT“, kein „keine Warnungen“), `stale_warnings_say_outdated`; `selectLayout.test.ts`: `warn_state_unknown_and_stale`
   - `WeatherPanel.test.tsx`: übersetzt `condition` „rain“ → „Regen“
 - [ ] **Step 2:** `pnpm -C frontend test` → FAIL.
 - [ ] **Step 3:** Implementieren.
@@ -261,4 +266,4 @@ Gestaltung nach `docs/design/2026-10-27-zustaende.html` (Zustände A und B; C en
 
 ## Abhängigkeiten
 
-Task 1 → (Task 2 ∥ Task 3) → Task 4 → Task 6 → Task 7; Task 5 ∥ Task 2–4 (nach Task 1). Task 6 braucht Task 4 und 5.
+Ausführung **nacheinander** in einem Arbeitsbaum: Task 1 → 2 → 3 → 4 → 5 → 6 → 7. Keine parallelen Implementierer im selben Baum.
