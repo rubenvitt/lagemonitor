@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Reihenfolge = Schwere; `Ord` wird für den Schwellenvergleich genutzt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+/// Gelesen wird ohne Rücksicht auf Groß-/Kleinschreibung (`"severe"` in den Einstellungen, `"SEVERE"` bei NINA).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 #[ts(export, export_to = "../frontend/src/contract/")]
 pub enum Severity {
     Unknown,
@@ -13,6 +14,31 @@ pub enum Severity {
     Moderate,
     Severe,
     Extreme,
+}
+
+impl Severity {
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name.to_ascii_lowercase().as_str() {
+            "unknown" => Severity::Unknown,
+            "minor" => Severity::Minor,
+            "moderate" => Severity::Moderate,
+            "severe" => Severity::Severe,
+            "extreme" => Severity::Extreme,
+            _ => return None,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Severity {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Self::from_name(&name).ok_or_else(|| {
+            serde::de::Error::unknown_variant(
+                &name,
+                &["Unknown", "Minor", "Moderate", "Severe", "Extreme"],
+            )
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

@@ -11,13 +11,16 @@ pub enum AppError {
     /// Details nur ins Log.
     #[error("Interner Serverfehler")]
     Internal(String),
+    /// Nur der Name der Einstellung geht nach außen, damit man den Wert findet; Details ins Log.
+    #[error("Einstellungen nicht lesbar: {0}")]
+    Settings(&'static str),
 }
 
 impl AppError {
     pub fn status(&self) -> StatusCode {
         match self {
             AppError::NotFound => StatusCode::NOT_FOUND,
-            AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Internal(_) | AppError::Settings(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

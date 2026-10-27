@@ -22,36 +22,47 @@ use crate::web;
 pub struct AppState {
     pub pool: SqlitePool,
     pub boot: Arc<BootConfig>,
-    /// Letzter Abruffehler je Quelle; fehlt der Eintrag, lief der letzte Abruf durch.
-    pub errors: Arc<RwLock<HashMap<&'static str, String>>>,
-    /// Nur gesetzt, wenn `karte.mbtiles` beim Start vorhanden war.
+    /// Letzter Abruffehler je Stand-Schlüssel (`poller::nina_key` …); fehlt der Eintrag, lief der letzte Abruf durch.
+    pub errors: Arc<RwLock<HashMap<String, String>>>,
+    /// Nur gesetzt, wenn `karte.mbtiles` beim Start vorhanden und lesbar war.
     pub tiles: Option<SqlitePool>,
 }
 
 impl AppState {
-    pub async fn new(pool: SqlitePool, boot: Arc<BootConfig>) -> Result<Self, AppError> {
+    /// Eine kaputte Kartendatei darf den Monitor nicht aufhalten: Die Karte lädt dann online.
+    pub async fn new(pool: SqlitePool, boot: Arc<BootConfig>) -> Self {
         // shortcut: Kartendatei wird nur beim Start geöffnet – nach dem Ablegen neu starten.
         let tiles_path = boot.tiles_path();
         let tiles = if tiles_path.exists() {
-            let options = SqliteConnectOptions::new()
-                .filename(&tiles_path)
-                .read_only(true);
-            Some(
-                SqlitePoolOptions::new()
-                    .max_connections(2)
-                    .connect_with(options)
-                    .await?,
-            )
+            open_tiles(&tiles_path)
+                .await
+                .inspect_err(|e| {
+                    tracing::warn!(path = %tiles_path.display(), error = %e, "Kartendatei nicht lesbar, Karte lädt online");
+                })
+                .ok()
         } else {
             None
         };
-        Ok(Self {
+        Self {
             pool,
             boot,
             errors: Arc::default(),
             tiles,
-        })
+        }
     }
+}
+
+/// SQLite öffnet faul: Erst eine Abfrage zeigt, ob die Datei eine Kartendatei ist.
+async fn open_tiles(path: &std::path::Path) -> Result<SqlitePool, sqlx::Error> {
+    let options = SqliteConnectOptions::new().filename(path).read_only(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(2)
+        .connect_with(options)
+        .await?;
+    sqlx::query("SELECT 1 FROM tiles LIMIT 1")
+        .fetch_optional(&pool)
+        .await?;
+    Ok(pool)
 }
 
 pub fn router(state: AppState) -> Router {
@@ -103,9 +114,7 @@ mod tests {
             }
             None => BootConfig::from_lookup(|_| None),
         };
-        AppState::new(crate::db::test_pool().await, Arc::new(boot.unwrap()))
-            .await
-            .unwrap()
+        AppState::new(crate::db::test_pool().await, Arc::new(boot.unwrap())).await
     }
 
     async fn json_of(res: Response) -> serde_json::Value {
@@ -139,10 +148,12 @@ mod tests {
     async fn monitor_serves_snapshot_when_upstream_down() {
         let state = test_state(None).await;
         let ten_min_ago = chrono::Utc::now().timestamp_millis() - 600_000;
-        crate::store::save(&state.pool, "nina", ten_min_ago, &Vec::<i32>::new())
+        let cfg = crate::settings::load(&state.pool).await.unwrap();
+        let key = crate::poller::nina_key(&cfg.region);
+        crate::store::save(&state.pool, &key, ten_min_ago, &Vec::<i32>::new())
             .await
             .unwrap();
-        crate::poller::run_once(&state, "nina", failing, ten_min_ago + 1).await;
+        crate::poller::run_once(&state, &key, failing, || ten_min_ago + 1).await;
         let res = router(state)
             .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
             .await
@@ -156,15 +167,15 @@ mod tests {
     #[tokio::test]
     async fn failed_fetch_keeps_previous_snapshot() {
         let state = test_state(None).await;
-        crate::poller::run_once(&state, "nina", || async { Ok(vec![7]) }, 1000).await;
+        crate::poller::run_once(&state, "nina", || async { Ok(vec![7]) }, || 1000).await;
         assert!(state.errors.read().await.is_empty());
-        crate::poller::run_once(&state, "nina", failing, 2000).await;
+        crate::poller::run_once(&state, "nina", failing, || 2000).await;
         assert_eq!(
             crate::store::load::<Vec<i32>>(&state.pool, "nina").await,
             Some((1000, vec![7]))
         );
         assert!(state.errors.read().await.contains_key("nina"));
-        crate::poller::run_once(&state, "nina", || async { Ok(vec![8]) }, 3000).await;
+        crate::poller::run_once(&state, "nina", || async { Ok(vec![8]) }, || 3000).await;
         assert!(state.errors.read().await.is_empty());
     }
 
@@ -175,15 +186,85 @@ mod tests {
             &state,
             "nina",
             || async { panic!("boom") as Result<Vec<i32>, crate::sources::SourceError> },
-            1000,
+            || 1000,
         )
         .await;
         assert_eq!(state.errors.read().await["nina"], "Abruf abgestürzt");
-        crate::poller::run_once(&state, "nina", || async { Ok(vec![5]) }, 2000).await;
+        crate::poller::run_once(&state, "nina", || async { Ok(vec![5]) }, || 2000).await;
         assert!(state.errors.read().await.is_empty());
         assert_eq!(
             crate::store::load::<Vec<i32>>(&state.pool, "nina").await,
             Some((2000, vec![5]))
+        );
+    }
+
+    #[tokio::test]
+    async fn broken_cap_never_yields_fresh_snapshot_without_it() {
+        let state = test_state(None).await;
+        let dwd = crate::sources::nina::tests::dwd_id();
+        let base = crate::sources::nina::tests::serve(move |f| f.starts_with(&dwd)).await;
+        crate::poller::poll_nina(&state, &reqwest::Client::new(), &base).await;
+        let res = router(state)
+            .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let json = json_of(res).await;
+        assert!(json["warnings"]["data"].is_null(), "{json}");
+        assert!(json["warnings"]["error"].is_string(), "{json}");
+    }
+
+    #[tokio::test]
+    async fn region_change_hides_old_snapshot() {
+        let state = test_state(None).await;
+        let cfg = crate::settings::load(&state.pool).await.unwrap();
+        let now = chrono::Utc::now().timestamp_millis();
+        let key = crate::poller::nina_key(&cfg.region);
+        crate::store::save(&state.pool, &key, now, &Vec::<i32>::new())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('region', ?)")
+            .bind(r#"{"ars":"031550000000","name":"Landkreis Celle"}"#)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        assert_ne!(cfg.region.ars, "031550000000");
+        let res = router(state)
+            .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let json = json_of(res).await;
+        assert_eq!(json["region"]["name"], "Landkreis Celle");
+        assert!(json["warnings"]["data"].is_null(), "{json}");
+    }
+
+    #[tokio::test]
+    async fn corrupt_tiles_file_falls_back_online() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("karte.mbtiles"), b"keine Datenbank").unwrap();
+        let state = test_state(Some(dir.path())).await;
+        let res = router(state)
+            .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_of(res).await["map"]["offline"], false);
+    }
+
+    #[tokio::test]
+    async fn unreadable_setting_is_named_in_500() {
+        let state = test_state(None).await;
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('warn_threshold', '\"Bananas\"')")
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        let res = router(state)
+            .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            json_of(res).await["error"],
+            "Einstellungen nicht lesbar: warn_threshold"
         );
     }
 

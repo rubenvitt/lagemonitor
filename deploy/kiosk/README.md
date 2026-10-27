@@ -6,7 +6,7 @@ Nach dem Booten startet auf dem angeschlossenen Bildschirm (tty1) Chromium im Vo
 
 ```bash
 sudo apt update
-sudo apt install -y cage
+sudo apt install -y cage curl
 sudo snap install chromium   # auf Ubuntu gibt es Chromium nur als Snap
 ```
 
@@ -62,6 +62,8 @@ ConditionPathExists=/dev/tty1
 User=kiosk
 PAMName=lagemonitor-kiosk
 EnvironmentFile=/etc/default/lagemonitor-kiosk
+ExecStartPre=/bin/sh -c 'until curl -sf http://127.0.0.1:8080/api/health >/dev/null; do sleep 2; done'
+TimeoutStartSec=infinity
 ExecStart=/usr/bin/cage -- /snap/bin/chromium --kiosk --incognito --no-first-run --noerrdialogs --disable-infobars --disable-translate --ozone-platform=wayland --check-for-update-interval=31536000 ${KIOSK_URL}
 Restart=always
 RestartSec=5
@@ -78,6 +80,8 @@ StandardError=journal
 WantedBy=graphical.target
 EOF
 ```
+
+`ExecStartPre` wartet, bis der Lagemonitor antwortet. So zeigt der Bildschirm nach dem Booten nie die Fehlerseite des Browsers, sondern bleibt schwarz, bis der Lagemonitor bereit ist. `TimeoutStartSec=infinity` erlaubt dieses Warten beliebig lange.
 
 `--incognito` sorgt dafür, dass nach einem Stromausfall kein Hinweis „Seiten wiederherstellen?“ erscheint. Stürzt Chromium ab, startet systemd ihn nach 5 Sekunden neu.
 

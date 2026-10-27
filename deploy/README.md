@@ -247,20 +247,33 @@ docker image prune -f
 Ohne dieses Paket lädt die Karte ihre Kacheln aus dem Internet. Mit der Offline-Karte funktioniert sie auch ohne Verbindung.
 
 1. Baue das Kartenpaket auf dem Laptop im Projekt `lifeline-hub/karten-build`: `make tiles AREA=germany`.
-2. Kopiere die erzeugte Datei auf den Server. Auf dem **Laptop**:
+2. Kopiere die erzeugte Datei auf den Server, zuerst nach `/tmp`. Direkt nach `data` geht es nicht, der Ordner gehört dem Benutzer 65532. Auf dem **Laptop**:
 
    ```bash
-   scp karte.mbtiles BENUTZER@SERVERNAME:/opt/lagemonitor/data/karte.mbtiles
+   scp karte.mbtiles BENUTZER@SERVERNAME:/tmp/karte.mbtiles
    ```
 
-3. Auf dem Server neu starten (die Karte wird nur beim Start gelesen):
+3. Auf dem **Server** die Datei an ihren Platz legen und dem Lagemonitor übergeben:
+
+   ```bash
+   sudo install -o 65532 -g 65532 -m 0644 /tmp/karte.mbtiles /opt/lagemonitor/data/karte.mbtiles
+   rm /tmp/karte.mbtiles
+   ```
+
+4. Neu starten (die Karte wird nur beim Start gelesen):
 
    ```bash
    cd /opt/lagemonitor
    docker compose restart
    ```
 
-**So prüfst du es:** In `ls -la /opt/lagemonitor/data` steht `karte.mbtiles`. Nach dem Neustart zeigt die Karte im Lagemonitor die Offline-Kacheln. Nachweis ohne Internet: Ziehe testweise das Netzwerkkabel zum Uplink, die Karte bleibt sichtbar. Falls die Datei Fehler macht, steht der Grund in `docker compose logs`.
+**So prüfst du es:** In `ls -la /opt/lagemonitor/data` steht `karte.mbtiles` mit Besitzer `65532`. Dann:
+
+```bash
+curl -s 127.0.0.1:8080/api/monitor | grep -o '"map":{[^}]*}'
+```
+
+Die Ausgabe ist `"map":{"offline":true}`. Steht dort `false`, ist die Datei nicht lesbar. Der Lagemonitor läuft trotzdem weiter und lädt die Karte aus dem Internet. Den Grund findest du mit `docker compose logs | grep Kartendatei`. Nachweis ohne Internet: Ziehe testweise das Netzwerkkabel zum Uplink, die Karte bleibt sichtbar.
 
 ---
 
@@ -296,7 +309,7 @@ Beispiel: Warnschwelle auf „Moderate“ setzen:
 sudo sqlite3 /opt/lagemonitor/data/lagemonitor.db "INSERT OR REPLACE INTO settings(key, value) VALUES ('warn_threshold', '\"Moderate\"');"
 ```
 
-Danach den Lagemonitor neu starten, damit er die Werte liest:
+Der Lagemonitor liest die Werte bei jedem Abruf und jeder Anzeige neu. Ein Neustart sorgt nur dafür, dass er die Daten für den neuen Ort sofort holt, statt bis zum nächsten Abruf zu warten (Warnungen jede Minute, Wetter alle 10 Minuten). Nach einer Änderung von Standort oder Landkreis zeigt der Bildschirm bis dahin „WARNLAGE UNBEKANNT“ bzw. „Noch keine Daten“, nie die Daten des alten Orts. Die Warnschwelle wirkt sofort.
 
 ```bash
 cd /opt/lagemonitor
@@ -311,7 +324,22 @@ docker compose restart
 sudo sqlite3 /opt/lagemonitor/data/lagemonitor.db "SELECT key, value FROM settings;"
 ```
 
-Die Ausgabe enthält deine neuen Werte, zum Beispiel `warn_threshold|"Moderate"`. 
+Die Ausgabe enthält deine neuen Werte, zum Beispiel `warn_threshold|"Moderate"`.
+
+Dann prüfen, ob der Lagemonitor die Werte lesen kann:
+
+```bash
+curl -s 127.0.0.1:8080/api/monitor | head -c 200
+```
+
+Die Ausgabe muss mit `{"nowMs"` beginnen. Beginnt sie stattdessen mit `{"error":"Einstellungen nicht lesbar: …"}`, ist der Wert mit dem genannten Namen falsch geschrieben. Der Bildschirm zeigt dann „Server nicht erreichbar“. Häufige Ursachen:
+
+- ein Anführungszeichen fehlt: `warn_threshold` braucht `'"Moderate"'` (mit `\"` im Befehl oben), nicht `'Moderate'`
+- ein Tippfehler im Stufennamen: erlaubt sind nur `Minor`, `Moderate`, `Severe`, `Extreme` (Groß- und Kleinschreibung ist egal)
+- bei `location` ein Komma statt Punkt in der Zahl (`49,0069` statt `49.0069`) oder ein fehlendes Feld (`lat`, `lon`, `label`)
+- bei `region` fehlt `ars` oder `name`
+
+Korrigiere den Wert mit demselben `INSERT OR REPLACE`-Befehl und prüfe erneut.
 
 ---
 
@@ -329,7 +357,7 @@ docker compose logs -f
 | `denied` oder `unauthorized` beim Herunterladen | Der Token ist abgelaufen oder falsch. Neuen Token anlegen (Schritt 2) und `docker login ghcr.io -u rubenvitt` wiederholen. |
 | `LAN_IP fehlt` | Die Datei `.env` fehlt (Schritt 4). |
 | `address already in use` | Auf Port 8080 läuft schon etwas anderes. Mit `sudo ss -ltnp \| grep 8080` siehst du, was. Das andere Programm beenden oder umstellen. |
-| `cannot assign requested address` oder der Dienst startet nicht | `LAN_IP` in `/opt/lagemonitor/.env` stimmt nicht. Mit `ip -4 addr` die Adresse neu ermitteln, `.env` korrigieren, dann `docker compose up -d`. |
+| `Adresse nicht verfügbar, neuer Versuch` im Protokoll, im Fahrzeugnetz nicht erreichbar | Die Adresse aus `LAN_IP` ist (noch) nicht am Server. Der Bildschirm am Server läuft weiter, der Lagemonitor versucht es alle 10 Sekunden erneut. Steckt das Kabel und hat der Server seine Adresse, verschwindet die Meldung von allein. Sonst stimmt `LAN_IP` in `/opt/lagemonitor/.env` nicht: mit `ip -4 addr` die Adresse neu ermitteln, `.env` korrigieren, dann `docker compose up -d`. |
 | `variable is not set` / `LAN_IP` leer | Die Datei `.env` fehlt oder liegt im falschen Ordner. Sie muss neben `compose.yaml` in `/opt/lagemonitor` liegen. |
 | `unable to open database file` / `permission denied` bei `data` | Der Ordner gehört nicht dem Benutzer 65532. Reparieren: `sudo chown -R 65532:65532 /opt/lagemonitor/data`, dann `docker compose restart`. |
 | Bildschirm zeigt „Noch keine Daten“ | Der Server hat noch kein Internet gehabt. Kurz warten, die Daten werden regelmäßig geholt. Letzte Stände bleiben auch ohne Internet erhalten. |

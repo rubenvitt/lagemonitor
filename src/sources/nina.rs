@@ -101,16 +101,6 @@ pub fn level_label(provider: Provider, severity: Severity) -> String {
     label.to_string()
 }
 
-fn parse_severity(raw: &str) -> Severity {
-    match raw {
-        "Minor" => Severity::Minor,
-        "Moderate" => Severity::Moderate,
-        "Severe" => Severity::Severe,
-        "Extreme" => Severity::Extreme,
-        _ => Severity::Unknown,
-    }
-}
-
 /// Fehlende oder kaputte Geometrie ist kein Fehler: die Warnung bleibt ohne Karte erhalten.
 fn parse_geometry(geojson: Option<&[u8]>) -> Option<serde_json::Value> {
     let value: serde_json::Value = serde_json::from_slice(geojson?).ok()?;
@@ -135,7 +125,7 @@ pub fn parse_warning(
         .next()
         .ok_or_else(|| SourceError::Parse(format!("Warnung {id}: ohne info-Block")))?;
     let provider = provider.unwrap_or_else(|| provider_of(id));
-    let severity = parse_severity(&info.severity);
+    let severity = Severity::from_name(&info.severity).unwrap_or(Severity::Unknown);
     Ok(Warning {
         id: id.to_string(),
         provider,
@@ -166,32 +156,32 @@ async fn fetch_one(
     parse_warning(id, provider, &cap, geojson.as_deref())
 }
 
+/// `previous`: letzter gespeicherter Stand. Ist eine gelistete Warnung nicht abrufbar, gilt ihr
+/// letzter Stand; fehlt der, ist der ganze Abruf ein Fehler. Sonst verschwände eine Warnung still,
+/// und der Bildschirm zeigte womöglich Ruhe.
 pub async fn fetch(
     http: &reqwest::Client,
     base: &Url,
     ars: &str,
+    previous: &[Warning],
 ) -> Result<Vec<Warning>, SourceError> {
     let dashboard = get_bytes(http, endpoint(base, &format!("dashboard/{ars}.json"))?).await?;
-    let entries = parse_dashboard(&dashboard)?;
-    let listed = entries.len();
     let mut warnings = Vec::new();
-    for (id, provider) in entries {
-        // Eine kaputte Warnung darf die übrigen nicht verbergen.
+    for (id, provider) in parse_dashboard(&dashboard)? {
         match fetch_one(http, base, &id, provider).await {
             Ok(w) => warnings.push(w),
-            Err(e) => tracing::warn!(%id, error = %e, "NINA-Warnung übersprungen"),
+            Err(e) => {
+                let old = previous.iter().find(|w| w.id == id).ok_or(e)?;
+                tracing::warn!(%id, "NINA-Warnung nicht abrufbar, letzter Stand bleibt");
+                warnings.push(old.clone());
+            }
         }
-    }
-    if listed > 0 && warnings.is_empty() {
-        return Err(SourceError::Http(format!(
-            "alle {listed} Warnungen nicht abrufbar"
-        )));
     }
     Ok(warnings)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use axum::{Router, http::StatusCode, routing::get};
 
@@ -201,7 +191,7 @@ mod tests {
     const CAP_MOWAS: &[u8] = include_bytes!("../../tests/fixtures/nina/cap-mowas.json");
     const GEOJSON: &[u8] = include_bytes!("../../tests/fixtures/nina/geojson-dwd.json");
 
-    fn dwd_id() -> String {
+    pub(crate) fn dwd_id() -> String {
         parse_dashboard(FULL).unwrap().remove(0).0
     }
 
@@ -260,6 +250,14 @@ mod tests {
     }
 
     #[test]
+    fn severity_ignores_case() {
+        let mut cap: serde_json::Value = serde_json::from_slice(CAP_DWD).unwrap();
+        cap["info"][0]["severity"] = "SEVERE".into();
+        let w = parse_warning("dwd.x", None, &serde_json::to_vec(&cap).unwrap(), None).unwrap();
+        assert_eq!(w.severity, Severity::Severe);
+    }
+
+    #[test]
     fn provider_and_labels() {
         assert_eq!(provider_of("mow.DE-1"), Provider::Mowas);
         assert_eq!(provider_of("kat.1"), Provider::Katwarn);
@@ -294,7 +292,7 @@ mod tests {
         let base = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
-        let warnings = fetch(&reqwest::Client::new(), &base, "150850000000")
+        let warnings = fetch(&reqwest::Client::new(), &base, "150850000000", &[])
             .await
             .unwrap();
         assert_eq!(warnings.len(), 2);
@@ -302,9 +300,12 @@ mod tests {
         assert!(warnings.iter().all(|w| w.geometry.is_none()));
     }
 
-    async fn serve(broken: impl Fn(&str) -> bool + Clone + Send + Sync + 'static) -> Url {
+    /// NINA-Attrappe: jedes Dashboard liefert `FULL`, `broken` wählt CAP-Dateien, die mit 500 antworten.
+    pub(crate) async fn serve(
+        broken: impl Fn(&str) -> bool + Clone + Send + Sync + 'static,
+    ) -> Url {
         let app = Router::new()
-            .route("/dashboard/1.json", get(|| async { FULL }))
+            .route("/dashboard/{file}", get(|| async { FULL }))
             .route(
                 "/warnings/{file}",
                 get(
@@ -330,15 +331,35 @@ mod tests {
     #[tokio::test]
     async fn one_broken_cap_does_not_hide_others() {
         let first = dwd_id();
+        let mut old = parse_warning(&first, Some(Provider::Dwd), CAP_DWD, None).unwrap();
+        old.headline = "letzter Stand".into();
         let base = serve(move |f| f.starts_with(&first)).await;
-        let warnings = fetch(&reqwest::Client::new(), &base, "1").await.unwrap();
-        assert_eq!(warnings.len(), 1);
-        assert_eq!(warnings[0].provider, Provider::Mowas);
+        let warnings = fetch(&reqwest::Client::new(), &base, "1", &[old])
+            .await
+            .unwrap();
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings[0].headline, "letzter Stand");
+        assert_eq!(warnings[1].provider, Provider::Mowas);
+    }
+
+    #[tokio::test]
+    async fn broken_cap_without_previous_is_error() {
+        let first = dwd_id();
+        let base = serve(move |f| f.starts_with(&first)).await;
+        assert!(
+            fetch(&reqwest::Client::new(), &base, "1", &[])
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
     async fn all_caps_failing_is_error() {
         let base = serve(|_| true).await;
-        assert!(fetch(&reqwest::Client::new(), &base, "1").await.is_err());
+        assert!(
+            fetch(&reqwest::Client::new(), &base, "1", &[])
+                .await
+                .is_err()
+        );
     }
 }

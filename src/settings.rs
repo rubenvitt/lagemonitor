@@ -30,14 +30,19 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
     })
 }
 
-async fn get<T: DeserializeOwned>(pool: &SqlitePool, key: &str) -> Result<Option<T>, AppError> {
+async fn get<T: DeserializeOwned>(
+    pool: &SqlitePool,
+    key: &'static str,
+) -> Result<Option<T>, AppError> {
     let raw: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
         .bind(key)
         .fetch_optional(pool)
         .await?;
     raw.map(|json| {
-        serde_json::from_str(&json)
-            .map_err(|e| AppError::Internal(format!("Einstellung {key}: {e}")))
+        serde_json::from_str(&json).map_err(|e| {
+            tracing::warn!(key, error = %e, "Einstellung nicht lesbar");
+            AppError::Settings(key)
+        })
     })
     .transpose()
 }
@@ -53,6 +58,19 @@ mod tests {
         assert_eq!(s.location.label, "Uelzen");
         assert_eq!(s.region.ars, "033600000000");
         assert_eq!(s.warn_threshold, Severity::Severe);
+    }
+
+    #[tokio::test]
+    async fn threshold_ignores_case() {
+        let pool = crate::db::test_pool().await;
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('warn_threshold', '\"moderate\"')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            load(&pool).await.unwrap().warn_threshold,
+            Severity::Moderate
+        );
     }
 
     #[tokio::test]

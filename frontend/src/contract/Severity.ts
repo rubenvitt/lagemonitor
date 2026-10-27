@@ -2,5 +2,6 @@
 
 /**
  * Reihenfolge = Schwere; `Ord` wird für den Schwellenvergleich genutzt.
+ * Gelesen wird ohne Rücksicht auf Groß-/Kleinschreibung (`"severe"` in den Einstellungen, `"SEVERE"` bei NINA).
  */
 export type Severity = "Unknown" | "Minor" | "Moderate" | "Severe" | "Extreme";
