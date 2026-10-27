@@ -15,7 +15,7 @@ pub async fn get(
     // MBTiles zählt Zeilen von unten (TMS), die Karte von oben.
     let Some(row) = 1u32
         .checked_shl(z.into())
-        .and_then(|n| n.checked_sub(1 + y))
+        .and_then(|n| n.checked_sub(1).and_then(|max| max.checked_sub(y)))
     else {
         return Err(AppError::NotFound);
     };

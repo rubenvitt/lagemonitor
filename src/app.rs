@@ -169,8 +169,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn panicking_fetch_is_recorded_and_next_fetch_lands() {
+        let state = test_state(None).await;
+        crate::poller::run_once(
+            &state,
+            "nina",
+            || async { panic!("boom") as Result<Vec<i32>, crate::sources::SourceError> },
+            1000,
+        )
+        .await;
+        assert_eq!(state.errors.read().await["nina"], "Abruf abgestürzt");
+        crate::poller::run_once(&state, "nina", || async { Ok(vec![5]) }, 2000).await;
+        assert!(state.errors.read().await.is_empty());
+        assert_eq!(
+            crate::store::load::<Vec<i32>>(&state.pool, "nina").await,
+            Some((2000, vec![5]))
+        );
+    }
+
+    #[tokio::test]
     async fn tiles_404_without_file() {
         let res = get_path("/api/tiles/1/0/0").await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let res = get_path("/api/tiles/1/0/4294967295").await;
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
