@@ -35,7 +35,8 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
       zoom: 9,
       attributionControl: { compact: false },
     });
-    m.on('load', () => {
+    // `style.load` statt `load`: `load` wartet auf die ersten Kacheln, und die hängen ohne Netz.
+    m.once('style.load', () => {
       m.addSource('radar', { type: 'raster', tiles: [radarTiles(0)], tileSize: 256, attribution: '© DWD' });
       m.addSource('warngebiete', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       m.addSource('standort', {

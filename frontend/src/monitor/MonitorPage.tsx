@@ -6,7 +6,7 @@ import Header from './Header';
 import MapPanel from './MapPanel';
 import WarningBand from './WarningBand';
 import WeatherPanel from './WeatherPanel';
-import { UNKNOWN_LAYOUT, selectLayout, withRequestError } from './selectLayout';
+import { UNKNOWN_LAYOUT, isClientStale, markStale, selectLayout } from './selectLayout';
 import './monitor.css';
 
 function useNow(intervalMs: number): number {
@@ -19,11 +19,12 @@ function useNow(intervalMs: number): number {
 }
 
 export default function MonitorPage() {
-  const { data, isError, isPending } = useMonitor();
+  const { data, isError, isPending, dataUpdatedAt } = useMonitor();
   const clockNow = useNow(1000);
   // Die Aufteilung nur alle 30 s neu rechnen: sonst bekäme die Karte jede Sekunde neue Warngebiete.
   const layoutNow = useNow(30_000);
-  const view = useMemo(() => data && withRequestError(data, isError), [data, isError]);
+  const clientStale = isClientStale(isError, dataUpdatedAt, clockNow);
+  const view = useMemo(() => data && markStale(data, clientStale), [data, clientStale]);
   const layout = useMemo(() => (view ? selectLayout(view, layoutNow) : UNKNOWN_LAYOUT), [view, layoutNow]);
   useWarnsperre(layout.mode === 'warnung');
 

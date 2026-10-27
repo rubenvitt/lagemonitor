@@ -1,4 +1,4 @@
-import { selectLayout, withRequestError } from './selectLayout';
+import { isClientStale, markStale, selectLayout } from './selectLayout';
 import { HOUR, NOW, makeView, makeWarning } from './testViews';
 
 const withWarnings = (warnings: ReturnType<typeof makeWarning>[], threshold = 'Severe' as const) =>
@@ -66,12 +66,18 @@ test('onset_null_sorts_last_within_severity', () => {
   expect(selectLayout(withWarnings([noOnset, withOnset]), NOW).band.map((w) => w.id)).toEqual(['mit', 'ohne']);
 });
 
-test('request_error_marks_both_sources_stale', () => {
+test('mark_stale_marks_both_sources', () => {
   // Server nicht erreichbar: react-query behält den letzten Stand, der darf nicht mehr als frisch gelten.
   const view = makeView();
-  expect(withRequestError(view, false)).toBe(view);
-  const failed = withRequestError(view, true);
+  expect(markStale(view, false)).toBe(view);
+  const failed = markStale(view, true);
   expect(failed.warnings.stale).toBe(true);
   expect(failed.weather.stale).toBe(true);
   expect(selectLayout(failed, NOW).warnState).toBe('stale');
+});
+
+test('client_stale_after_90s_or_on_error', () => {
+  expect(isClientStale(false, NOW - 90_000, NOW)).toBe(false);
+  expect(isClientStale(false, NOW - 90_001, NOW)).toBe(true);
+  expect(isClientStale(true, NOW, NOW)).toBe(true);
 });

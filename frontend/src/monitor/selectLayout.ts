@@ -40,9 +40,20 @@ export function selectLayout(view: MonitorView, nowMs: number): Layout {
   };
 }
 
-/** Schlägt die Abfrage fehl, behält react-query den letzten Stand; der gilt dann als veraltet. */
-export function withRequestError(view: MonitorView, isError: boolean): MonitorView {
-  if (!isError) return view;
+/** Ohne frische Antwort seit so langer Zeit gilt der Stand auf dem Bildschirm als veraltet (drei Abrufe à 30 s). */
+export const CLIENT_STALE_MS = 90_000;
+
+/**
+ * Bei einem Fehler oder einer pausierten Abfrage (Netz weg, `fetchStatus: 'paused'`, kein
+ * `isError`) behält react-query den letzten Stand. Der darf dann nicht mehr als frisch gelten.
+ */
+export function isClientStale(isError: boolean, dataUpdatedAt: number, nowMs: number): boolean {
+  return isError || nowMs - dataUpdatedAt > CLIENT_STALE_MS;
+}
+
+/** Markiert beide Quellen als veraltet. */
+export function markStale(view: MonitorView, stale: boolean): MonitorView {
+  if (!stale) return view;
   return {
     ...view,
     weather: { ...view.weather, stale: true },
