@@ -248,19 +248,41 @@ Gestaltung nach `docs/design/2026-10-27-zustaende.html` (Zustände A und B; C en
 - [ ] **Step 4:** `scripts/check.sh` → grün. Sichtprüfung: `cargo run` mit gebautem Frontend, Screenshot bei 1920×1080 im Ruhezustand; Warnzustand mit einem temporär auf `Minor` gesetzten Schwellenwert (`sqlite3 data/lagemonitor.db "INSERT OR REPLACE INTO settings VALUES('warn_threshold','\"Minor\"')"`) und einem ARS mit aktiver Warnung prüfen, danach zurücksetzen.
 - [ ] **Step 5: Commit** `feat: Monitor-Ansicht mit Warnband, Wetter und Datenstand`
 
-### Task 7: Betrieb auf dem FüKw-Server
+### Task 7: Image in der CI und Betrieb per Docker auf dem FüKw-Server
+
+Nutzerwunsch 27.10.2026: Die CI baut das Image direkt, und es gibt eine einfache, verständliche Docker-Anleitung. Auf dem Server wird **nicht** gebaut, sondern das fertige Image gezogen.
 
 **Files:**
-- Create: `deploy/Dockerfile` (nach Suchlage: node → rust → distroless, `ENV LAGEMONITOR_DATA_DIR=/data`), `deploy/compose.yaml`, `deploy/README.md`
-- Modify: `deploy/kiosk/README.md` (Schritt 3: `KIOSK_URL=http://127.0.0.1:8080`), `README.md` (Installation, Nutzung, Einstellungen per `sqlite3` bis zur Verwaltung), `mise.toml` (Tasks `check`, `dev`, `image`)
+- Create: `deploy/Dockerfile` (nach Suchlage: node → rust → distroless, `ENV LAGEMONITOR_DATA_DIR=/data`), `.dockerignore`, `deploy/compose.yaml`, `deploy/.env.example`, `deploy/README.md`, `.github/workflows/ci.yml`
+- Modify: `deploy/kiosk/README.md` (Schritt 3: `KIOSK_URL=http://127.0.0.1:8080`), `README.md` (kurz: was es ist, Verweis auf `deploy/README.md`, Einstellungen per `sqlite3` bis zur Verwaltung), `mise.toml` (Tasks `check`, `dev`, `image`)
 
-`compose.yaml`: Dienst `lagemonitor`, `build: {context: .., dockerfile: deploy/Dockerfile}`, `network_mode: host` (damit `LAGEMONITOR_BIND` echte Host-Adressen bindet), `environment: LAGEMONITOR_BIND=127.0.0.1:8080,${LAN_IP}:8080`, `volumes: ./data:/data`, `restart: unless-stopped`. `deploy/README.md` beschreibt: Docker installieren, Repo klonen (Deploy-Key), `LAN_IP` in `deploy/.env` setzen, `docker compose -f deploy/compose.yaml up -d --build`, Kartenpaket: `make tiles AREA=germany` in `lifeline-hub/karten-build`, Datei nach `deploy/data/karte.mbtiles`, Dienst neu starten. Sicherheitsabschnitt: nie `0.0.0.0` binden; Uplink-Firewall (ufw: eingehend deny auf LTE/Sat-Interfaces, v4 und v6) – konkrete Interfacenamen folgen aus LGM-3.
+**CI (`.github/workflows/ci.yml`):**
+- Auslöser: `push` auf `main`, `pull_request`, `workflow_dispatch`.
+- Job `check`: Rust-Toolchain aus `rust-toolchain.toml`, Node/pnpm in den Versionen der Global Constraints, `CI=1 scripts/check.sh`. Cargo- und pnpm-Cache.
+- Job `image` (`needs: check`): `docker/setup-buildx-action`, `docker/login-action` gegen `ghcr.io` mit `GITHUB_TOKEN`, `docker/build-push-action` mit `file: deploy/Dockerfile`, `platforms: linux/amd64`, GHA-Build-Cache. **Push nur auf `main`** mit Tags `ghcr.io/rubenvitt/lagemonitor:latest` und `:sha-<kurz>`; bei PRs nur bauen. `permissions: contents: read, packages: write` nur in diesem Job.
+- Actions auf Major-Versionen pinnen wie in `~/dev/personal/drk/iuk-suite/.github/workflows/ci.yml` (dort als Vorlage für Login und build-push nachsehen).
+
+**`compose.yaml`:** Dienst `lagemonitor`, `image: ghcr.io/rubenvitt/lagemonitor:latest`, `network_mode: host` (damit `LAGEMONITOR_BIND` echte Host-Adressen bindet), `environment: LAGEMONITOR_BIND=127.0.0.1:8080,${LAN_IP}:8080`, `volumes: ./data:/data`, `restart: unless-stopped`. `.env.example` enthält nur `LAN_IP=192.168.x.y` mit Kommentar.
+
+**`deploy/README.md` – Anleitung für Menschen, nicht für Entwickler:** kurze Sätze, nummerierte Schritte, jeder Befehl zum Kopieren, nach jedem Schritt „So prüfst du es“. Inhalt:
+1. Docker installieren (offizielles apt-Repo von Docker für Ubuntu, `docker compose` Plugin), Benutzer in Gruppe `docker`.
+2. Zugang zum privaten Image: GitHub → Personal Access Token (classic) nur mit `read:packages` anlegen, `docker login ghcr.io -u rubenvitt` (Token als Passwort). Hinweis: Token in 1Password ablegen.
+3. Ordner `/opt/lagemonitor` anlegen, `compose.yaml` und `.env.example` dorthin (per `curl` aus dem Repo geht bei privatem Repo nicht → `scp` vom Laptop oder Inhalt aus der Anleitung einfügen; beides beschreiben, Inhalt der `compose.yaml` steht in der Anleitung).
+4. `LAN_IP` ermitteln (`ip -4 addr`) und in `.env` eintragen.
+5. Starten: `docker compose up -d`; prüfen: `curl -s 127.0.0.1:8080/api/health`.
+6. Kiosk auf `http://127.0.0.1:8080` umstellen (Verweis auf `deploy/kiosk/README.md`, Schritt 3 und 6).
+7. Aktualisieren: `docker compose pull && docker compose up -d`.
+8. Optional Offline-Karte: Kartenpaket bauen (`make tiles AREA=germany` in `lifeline-hub/karten-build`), als `/opt/lagemonitor/data/karte.mbtiles` ablegen, `docker compose restart`.
+9. Einstellungen ändern (Standort, Landkreis, Schwelle) per `sqlite3`, bis es eine Verwaltung gibt – mit fertigem Beispielbefehl.
+10. Fehlersuche: `docker compose logs -f`, häufige Fehler (Login abgelaufen → `denied`, Port belegt, falsche `LAN_IP`).
+Sicherheitsabschnitt: nie `0.0.0.0` binden; Uplink-Firewall (ufw: eingehend deny auf LTE/Sat-Interfaces, v4 und v6) – konkrete Interfacenamen folgen aus LGM-3.
 
 - [ ] **Step 1:** Dateien schreiben.
-- [ ] **Step 2:** `docker build -f deploy/Dockerfile -t lagemonitor:v1 .` → baut (falls lokal Docker verfügbar; sonst im Bericht vermerken).
-- [ ] **Step 3:** Container lokal starten (`-e LAGEMONITOR_BIND=127.0.0.1:8080`, ohne host-Netz auf macOS: `-p 127.0.0.1:8080:8080` mit `LAGEMONITOR_BIND=0.0.0.0:8080` nur für diesen Test), `curl -s 127.0.0.1:8080/api/health` → `{"status":"ok"}`.
-- [ ] **Step 4:** `scripts/check.sh` → grün.
-- [ ] **Step 5: Commit** `feat: Betrieb per Docker Compose auf dem FüKw-Server`
+- [ ] **Step 2:** `docker build -f deploy/Dockerfile -t lagemonitor:v1 .` → baut lokal (macOS: `--platform linux/amd64` nicht nötig für den Test).
+- [ ] **Step 3:** Container lokal starten (auf macOS ohne host-Netz: `-p 127.0.0.1:8080:8080 -e LAGEMONITOR_BIND=0.0.0.0:8080` nur für diesen Test), `curl -s 127.0.0.1:8080/api/health` → `{"status":"ok"}`.
+- [ ] **Step 4:** Workflow syntaktisch prüfen (`actionlint`, falls installiert; sonst YAML-Parse mit `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/workflows/ci.yml`). Die CI selbst läuft erst nach dem Push – das macht der Controller.
+- [ ] **Step 5:** `scripts/check.sh` → grün.
+- [ ] **Step 6: Commit** `feat: Image aus der CI und Docker-Anleitung für den FüKw-Server`
 
 ---
 
