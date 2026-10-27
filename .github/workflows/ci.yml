@@ -81,36 +81,45 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # fuekw-server holt das Deployment selbst ab (Poller, kein eingehender Zugang nötig).
   # Server-Seite und Einrichtung: rubenvitt/fuekw-deploy
   deploy:
     needs: image
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions: {}
-    environment: production
+    timeout-minutes: 15
+    permissions:
+      deployments: write
     concurrency:
       group: deploy-lagemonitor-production
       cancel-in-progress: false
     steps:
-      - name: Mit Tailscale verbinden
-        uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-          ping: ${{ secrets.DEPLOY_HOST }}
-
-      - name: Lagemonitor deployen
+      - name: Deployment anlegen und auf fuekw-server warten
         env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.image.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/deploy_key
-          # Der Forced Command auf dem Server legt das Projekt fest; übergeben wird nur das Image.
-          ssh -i ~/.ssh/deploy_key -p 2222 -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes "gh-deploy@$DEPLOY_HOST" "$IMAGE"
+          [ -n "$DIGEST" ] || { echo "::error::Image-Job hat keinen Digest geliefert"; exit 1; }
+          api="repos/$GITHUB_REPOSITORY/deployments"
+          id=$(jq -n --arg ref "$GITHUB_SHA" --arg image "$IMAGE@$DIGEST" \
+                 '{ref: $ref, environment: "production", task: "deploy-compose", auto_merge: false,
+                   required_contexts: [], payload: {image: $image}, description: "lagemonitor auf fuekw-server"}' \
+               | gh api "$api" --input - --jq .id)
+          echo "Deployment $id: $IMAGE@$DIGEST"
+          last=""
+          for _ in $(seq 60); do
+            status=$(gh api "$api/$id/statuses?per_page=1" --jq '.[0] | "\(.state // "pending") \(.description // "")"') \
+              || { sleep 10; continue; }
+            [ "$status" = "$last" ] || echo "$status"
+            last=$status
+            case "${status%% *}" in
+              success) exit 0 ;;
+              failure|error|inactive) echo "::error::${status#* }"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          # Als error markieren, damit der Server den veralteten Auftrag nicht später noch ausführt.
+          gh api "$api/$id/statuses" -f state=error -f description="Zeitüberschreitung: kein Status von fuekw-server" >/dev/null
+          echo "::error::fuekw-server hat nicht reagiert – läuft deploy-poller, ist das Token abgelaufen? (journalctl -u deploy-poller)"
+          exit 1
