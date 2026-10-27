@@ -181,21 +181,40 @@ fn endpoint(base: &Url, path: &str) -> Result<Url, SourceError> {
         .map_err(|e| SourceError::Http(format!("URL {path}: {e}")))
 }
 
+async fn fetch_one(
+    http: &reqwest::Client,
+    base: &Url,
+    id: &str,
+    provider: Option<Provider>,
+) -> Result<Warning, SourceError> {
+    let cap = get_bytes(http, endpoint(base, &format!("warnings/{id}.json"))?).await?;
+    let geojson = match endpoint(base, &format!("warnings/{id}.geojson")) {
+        Ok(url) => get_bytes(http, url).await.ok(),
+        Err(_) => None,
+    };
+    parse_warning(id, provider, &cap, geojson.as_deref())
+}
+
 pub async fn fetch(
     http: &reqwest::Client,
     base: &Url,
     ars: &str,
 ) -> Result<Vec<Warning>, SourceError> {
     let dashboard = get_bytes(http, endpoint(base, &format!("dashboard/{ars}.json"))?).await?;
+    let entries = parse_dashboard(&dashboard)?;
+    let listed = entries.len();
     let mut warnings = Vec::new();
-    for (id, provider) in parse_dashboard(&dashboard)? {
-        // Eine unlesbare Warnung bricht den Abruf ab: lieber alter Stand als stille Lücke.
-        let cap = get_bytes(http, endpoint(base, &format!("warnings/{id}.json"))?).await?;
-        let geojson = match endpoint(base, &format!("warnings/{id}.geojson")) {
-            Ok(url) => get_bytes(http, url).await.ok(),
-            Err(_) => None,
-        };
-        warnings.push(parse_warning(&id, provider, &cap, geojson.as_deref())?);
+    for (id, provider) in entries {
+        // Eine kaputte Warnung darf die übrigen nicht verbergen.
+        match fetch_one(http, base, &id, provider).await {
+            Ok(w) => warnings.push(w),
+            Err(e) => tracing::warn!(%id, error = %e, "NINA-Warnung übersprungen"),
+        }
+    }
+    if listed > 0 && warnings.is_empty() {
+        return Err(SourceError::Http(format!(
+            "alle {listed} Warnungen nicht abrufbar"
+        )));
     }
     Ok(warnings)
 }
@@ -310,5 +329,45 @@ mod tests {
         assert_eq!(warnings.len(), 2);
         assert_eq!(warnings[0].id, id);
         assert!(warnings.iter().all(|w| w.geometry.is_none()));
+    }
+
+    async fn serve(broken: impl Fn(&str) -> bool + Clone + Send + Sync + 'static) -> Url {
+        let app = Router::new()
+            .route("/dashboard/1.json", get(|| async { FULL }))
+            .route(
+                "/warnings/{file}",
+                get(
+                    move |axum::extract::Path(file): axum::extract::Path<String>| async move {
+                        if file.ends_with(".geojson") {
+                            (StatusCode::NOT_FOUND, Vec::new())
+                        } else if broken(&file) {
+                            (StatusCode::INTERNAL_SERVER_ERROR, Vec::new())
+                        } else if file.starts_with("dwd") {
+                            (StatusCode::OK, CAP_DWD.to_vec())
+                        } else {
+                            (StatusCode::OK, CAP_MOWAS.to_vec())
+                        }
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        base
+    }
+
+    #[tokio::test]
+    async fn one_broken_cap_does_not_hide_others() {
+        let first = dwd_id();
+        let base = serve(move |f| f.starts_with(&first)).await;
+        let warnings = fetch(&reqwest::Client::new(), &base, "1").await.unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].provider, Provider::Mowas);
+    }
+
+    #[tokio::test]
+    async fn all_caps_failing_is_error() {
+        let base = serve(|_| true).await;
+        assert!(fetch(&reqwest::Client::new(), &base, "1").await.is_err());
     }
 }
