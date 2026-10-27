@@ -211,7 +211,7 @@ Wenn der Kiosk-Bildschirm noch nicht eingerichtet ist, folge der Anleitung in [`
 KIOSK_URL=http://127.0.0.1:8080
 ```
 
-War der Kiosk schon eingerichtet, änderst du nur die Adresse (Schritt 3) und startest ihn neu (Schritt 6):
+War der Kiosk schon eingerichtet, wiederhole dort Schritt 1 (für `curl`) und Schritt 5 (der Dienst wartet jetzt, bis der Lagemonitor antwortet), dann `sudo systemctl daemon-reload`. Danach änderst du die Adresse (Schritt 3) und startest ihn neu (Schritt 6):
 
 ```bash
 echo 'KIOSK_URL=http://127.0.0.1:8080' | sudo tee /etc/default/lagemonitor-kiosk
