@@ -82,7 +82,8 @@ Jedes Widget meldet selbst, ob es gerade etwas zu sagen hat, und mit welcher Dri
 - **Warnungen:** NINA-API des BBK (`nina.api.bund.dev`), Abruf je Regionalschlüssel. Sie enthält DWD, MoWaS, KATWARN und Hochwasser. Warngebiete erscheinen als Fläche auf der Karte.
 - **Wetter:** DWD-Daten, z. B. über Bright Sky (kein Schlüssel nötig)
 - **Regenradar:** DWD-Radar als Kartenebene, nur bei bestehender Verbindung
-- **Karte:** offline über ein lokales Kartenpaket (PMTiles), MapLibre wie in Suchlage und Lifeline
+- **Karte:** offline über ein lokales Kartenpaket, MapLibre wie in Suchlage und Lifeline. Der FüKw ist auch außerhalb des Landkreises im Einsatz, wenn auch selten. Deshalb umfasst das Paket **ganz Deutschland**. Gebaut wird es mit der Pipeline aus Lifeline Hub (`lifeline-hub/karten-build`, Shortbread-MBTiles über `versatiles-planetiler`, `make tiles AREA=germany`), damit es später zu den LLH-Karten passt. Ob der Lagemonitor die Datei selbst ausliefert oder den `karten-service` aus LLH mitnutzt, entscheidet der Builder.
+- **Warnregion:** wird in der Admin-UI zusammen mit dem Standort eingestellt, als Regionalschlüssel bzw. Landkreis. Weil Einsätze außerhalb selten sind, folgt sie dem Standort in v1 nicht automatisch. Mit GPS-Standort kommt das später.
 - Abrufe laufen über den Server, nicht direkt aus dem Browser. Der Server cached die Daten und liefert sie mit Zeitstempel aus.
 
 *Entscheidung Claude – Warnstufen und Schwelle:*
@@ -108,7 +109,7 @@ Es gelten die Regeln der Instrumententafel: Nacht ist Vorgabe, Radius 0, Haarlin
 - Layout-Algorithmus für die Platzvergabe nach Dringlichkeit
 - Abrufintervalle und Schwellen für „veraltet“
 - Betriebsform des Monitor-Dienstes: Container wie bei Suchlage oder systemd. Die Kiosk-Schicht selbst ist host-seitig und läuft über systemd.
-- Wie das Kartenpaket für den Landkreis gebaut und aktualisiert wird
+- Wie das Deutschland-Kartenpaket aktualisiert und auf den Server gebracht wird
 
 ## 6. Offen
 

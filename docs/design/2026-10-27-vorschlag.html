@@ -1,0 +1,309 @@
+<title>Lagemonitor FüKw 40-12-1</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Archivo+Narrow:wght@600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: eine Lesespalte im Fugenraster der Lifeline-Instrumententafel – Haarlinien statt Karten, Radius 0, Nacht ist Vorgabe */
+:root{
+  --grund:#08090b;--flaeche:#0f1215;--flaeche2:#14171b;--flaeche3:#16191d;--linie:#22262b;--linie-stark:#2e343a;
+  --text:#e8ebee;--gedaempft:#9aa2ab;--bedien:#4d94d6;--bedien-flaeche:rgba(77,148,214,.14);--bedien-text:#8ec2f0;
+  --marke:#a8071a;--alarm:#ff6b6b;--alarm-flaeche:rgba(255,107,107,.12);--achtung:#e8cc3a;--achtung-flaeche:rgba(232,204,58,.1);
+  --kopf:#0c0e11;
+  --f-text:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-kopf:'Archivo Narrow','Archivo',system-ui,sans-serif;
+  --f-zahl:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --grund:#e9ebee;--flaeche:#ffffff;--flaeche2:#f5f6f8;--flaeche3:#e1e4e8;--linie:#d4d8dd;--linie-stark:#b9bfc6;
+  --text:#111418;--gedaempft:#363d45;--bedien:#154e84;--bedien-flaeche:#e4edf7;--bedien-text:#144779;
+  --alarm:#b02318;--alarm-flaeche:#f9e3e3;--achtung:#604200;--achtung-flaeche:rgba(122,82,0,.1);--kopf:#0c0e11;color-scheme:light}}
+:root[data-theme="light"]{
+  --grund:#e9ebee;--flaeche:#ffffff;--flaeche2:#f5f6f8;--flaeche3:#e1e4e8;--linie:#d4d8dd;--linie-stark:#b9bfc6;
+  --text:#111418;--gedaempft:#363d45;--bedien:#154e84;--bedien-flaeche:#e4edf7;--bedien-text:#144779;
+  --alarm:#b02318;--alarm-flaeche:#f9e3e3;--achtung:#604200;--achtung-flaeche:rgba(122,82,0,.1);--kopf:#0c0e11;color-scheme:light}
+
+*{box-sizing:border-box}
+body{background:var(--grund);color:var(--text);font-family:var(--f-text);font-size:15px;line-height:1.55;margin:0}
+.mono{font-family:var(--f-zahl);font-variant-numeric:tabular-nums}
+.kopfleiste{background:var(--kopf);color:#e8ebee;display:flex;align-items:center;gap:14px;height:52px;padding-right:max(16px,env(safe-area-inset-right,0px))}
+.kopfleiste .mk{width:52px;height:52px;background:var(--marke);display:grid;place-items:center;font-family:var(--f-kopf);font-size:22px;flex:none}
+.kopfleiste .wm{font-family:var(--f-zahl);font-size:12px;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kopfleiste .stand{margin-left:auto;font-family:var(--f-zahl);font-size:12px;color:#9aa2ab;white-space:nowrap}
+.seite{max-width:960px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:40px 64px;display:flex;flex-direction:column;gap:48px}
+.braue{font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--gedaempft)}
+h1{font-family:var(--f-kopf);font-weight:600;font-size:clamp(30px,5vw,44px);line-height:1.05;margin:6px 0 14px;text-wrap:balance}
+h2{font-family:var(--f-kopf);font-weight:600;font-size:24px;line-height:1.15;margin:4px 0 12px;text-wrap:balance}
+h3{font-size:15px;font-weight:600;margin:0}
+p{margin:0;max-width:68ch}
+.lead{font-size:17px;color:var(--text)}
+.sek{display:flex;flex-direction:column;gap:14px}
+.fuge{display:grid;gap:1px;background:var(--linie);border:1px solid var(--linie)}
+.fuge>*{background:var(--flaeche);padding:14px 16px;min-width:0}
+.kurz{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.kurz .wert{font-size:15px;font-weight:500;margin-top:4px}
+.chip{display:inline-block;font-family:var(--f-zahl);font-size:11px;font-weight:600;letter-spacing:.06em;padding:2px 7px;white-space:nowrap}
+.chip.v1{background:var(--bedien-flaeche);color:var(--bedien-text)}
+.chip.spaeter{background:var(--achtung-flaeche);color:var(--achtung)}
+.chip.nein{background:var(--alarm-flaeche);color:var(--alarm)}
+.tab{overflow-x:auto;border:1px solid var(--linie)}
+table{border-collapse:collapse;width:100%;min-width:560px;background:var(--flaeche)}
+th,td{text-align:left;vertical-align:top;padding:10px 14px;border-bottom:1px solid var(--linie)}
+th{font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--gedaempft);background:var(--flaeche2)}
+tr:last-child td{border-bottom:0}
+td small{color:var(--gedaempft);font-size:13px}
+ul.liste{margin:0;padding:0;list-style:none;display:grid;gap:1px;background:var(--linie);border:1px solid var(--linie)}
+ul.liste li{background:var(--flaeche);padding:12px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:baseline}
+ul.liste li .m{font-family:var(--f-zahl);font-size:11px;color:var(--gedaempft);min-width:7.5em}
+.hinweis{background:var(--bedien-flaeche);color:var(--text);padding:12px 16px;border-left:2px solid var(--bedien)}
+a{color:var(--bedien-text)}
+a:focus-visible{outline:2px solid var(--bedien);outline-offset:2px}
+
+/* Zustands-Umschalter */
+.umschalter{display:flex;flex-wrap:wrap;gap:1px;background:var(--linie);border:1px solid var(--linie);width:max-content;max-width:100%}
+.umschalter button{font:600 13px var(--f-text);background:var(--flaeche);color:var(--gedaempft);border:0;padding:10px 16px;cursor:pointer;min-height:44px}
+.umschalter button[aria-selected="true"]{background:var(--flaeche3);color:var(--text);box-shadow:inset 0 -2px 0 var(--bedien)}
+.umschalter button:focus-visible{outline:2px solid var(--bedien);outline-offset:-2px}
+.buehne{overflow-x:auto;border:1px solid var(--linie)}
+.zust-text{color:var(--gedaempft);font-size:14px}
+
+/* Mockup: zeigt den echten Nachtbildschirm, deshalb bewusst immer dunkel */
+.lm{--g:#08090b;--fl:#0f1215;--fl2:#14171b;--li:#22262b;--tx:#e8ebee;--gd:#9aa2ab;--bd:#4d94d6;--mk:#a8071a;--al:#ff6b6b;--alFS:rgba(255,107,107,.24);--ac:#e8cc3a;--acF:rgba(232,204,58,.1);
+  font-family:var(--f-text);color:var(--tx);background:var(--li);aspect-ratio:16/9;width:100%;min-width:680px;max-width:100%;display:grid;grid-template-rows:44px 1fr 26px;gap:1px;overflow:hidden;font-size:13px;line-height:1.35}
+.buehne .lm{max-width:none}
+.lm .k{background:#0c0e11;display:flex;align-items:center;gap:14px;padding-right:16px}
+.lm .k .m{width:44px;height:44px;background:var(--mk);display:grid;place-items:center;font-family:var(--f-kopf);font-size:18px}
+.lm .wm{font-family:var(--f-zahl);font-size:12px;letter-spacing:.06em}
+.lm .st{font-family:var(--f-zahl);font-size:11px;color:var(--gd)}
+.lm .pt{width:8px;height:8px;border-radius:50%;background:#52c41a;display:inline-block;margin-right:6px}
+.lm .uhr{margin-left:auto;font-family:var(--f-zahl);font-size:22px;font-weight:600}
+.lm .b{font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--gd)}
+.lm .p{background:var(--fl);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-height:0}
+.lm .f{background:#0c0e11;display:flex;align-items:center;gap:18px;padding:0 14px;font-family:var(--f-zahl);font-size:10px;color:var(--gd)}
+.lm .gr{font-family:var(--f-zahl);font-size:44px;font-weight:600;line-height:1}
+.lm .z{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--li);padding-top:5px}
+.lm .z span:last-child{font-family:var(--f-zahl)}
+.lm .ka{position:relative;padding:0;background:#0b1013;overflow:hidden}
+.lm .ka svg{position:absolute;inset:0;width:100%;height:100%}
+.lm .kl{position:absolute;left:10px;top:8px}
+.lm .vh{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--li);margin-top:auto;font-family:var(--f-zahl)}
+.lm .vh div{background:var(--fl2);padding:6px;text-align:center}
+.lm .tg{display:inline-block;padding:2px 6px;font-size:10px;font-weight:600;letter-spacing:.1em;font-family:var(--f-zahl)}
+
+/* Aufbau-Diagramm */
+.aufbau{display:grid;grid-template-columns:1fr auto 1.2fr auto 1fr;gap:12px;align-items:stretch;min-width:720px}
+.spalte{display:flex;flex-direction:column;gap:1px;background:var(--linie);border:1px solid var(--linie)}
+.spalte>div{background:var(--flaeche);padding:10px 12px}
+.spalte .kopfz{background:var(--flaeche2)}
+.spalte.kern>div:not(.kopfz){background:var(--flaeche3)}
+.pfeil{display:grid;place-items:center;color:var(--gedaempft);font-family:var(--f-zahl)}
+.klein{font-size:12px;color:var(--gedaempft)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<header class="kopfleiste" role="banner">
+  <div class="mk" aria-hidden="true">+</div>
+  <span class="wm">LAGEMONITOR · VORSCHLAG</span>
+  <span class="stand">Stand 27.10.2026</span>
+</header>
+
+<main class="seite">
+
+<section class="sek">
+  <div class="braue">DRK Bereitschaft · Gruppe I&amp;K</div>
+  <h1>Lagemonitor für den FüKw 40-12-1</h1>
+  <p class="lead">Der neue Server im Führungskraftwagen zeigt auf seinem Bildschirm ein Lagebild, ohne dass sich jemand anmelden muss: Wetter, amtliche Warnungen und eine Karte. Was gerade wichtig ist, bekommt Platz. Dieselbe Ansicht ist im Fahrzeugnetz und, mit Anmeldung, von unterwegs als Webseite erreichbar.</p>
+  <div class="fuge kurz">
+    <div><div class="braue">Betriebssystem</div><div class="wert">Ubuntu Server 26.04 LTS, kein Desktop</div></div>
+    <div><div class="braue">Anzeige</div><div class="wert">Kiosk-Browser startet beim Booten</div></div>
+    <div><div class="braue">Version 1</div><div class="wert">Wetter, Warnungen, Karte</div></div>
+    <div><div class="braue">Später</div><div class="wert">Lagemeldung, Drohnenbild, Lifeline Hub</div></div>
+  </div>
+</section>
+
+<section class="sek" aria-labelledby="h-zust">
+  <div class="braue">So sieht es aus</div>
+  <h2 id="h-zust">Drei Zustände, ein Bildschirm</h2>
+  <p>Der Monitor blättert nicht automatisch um. Wer kurz hochschaut, sieht immer das, was gerade gilt. Die Daten in den Entwürfen sind erfunden.</p>
+  <div class="umschalter" role="tablist" aria-label="Zustand wählen">
+    <button id="t-ruhe" role="tab" aria-selected="true" aria-controls="z-ruhe">Ruhe</button>
+    <button id="t-warn" role="tab" aria-selected="false" aria-controls="z-warn">Unwetterwarnung</button>
+    <button id="t-schau" role="tab" aria-selected="false" aria-controls="z-schau">Tag der offenen Tür</button>
+  </div>
+
+  <div id="z-ruhe" role="tabpanel" aria-labelledby="t-ruhe" class="sek">
+    <p class="zust-text">Nichts liegt an. Die Karte ist groß und zeigt den Standort, rechts stehen das Wetter und die nächsten Stunden.</p>
+    <div class="buehne"><div class="lm">
+      <div class="k"><div class="m">+</div><span class="wm">LAGEMONITOR · FüKw 40-12-1</span><span class="st"><span class="pt"></span>RUHE · keine Warnungen</span><span class="uhr">07:41:12</span></div>
+      <div style="display:grid;grid-template-columns:2.2fr 1fr;gap:1px;min-height:0">
+        <div class="p ka"><svg viewBox="0 0 400 260" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="400" height="260" fill="#0b1013"/><path d="M0 180 Q120 140 200 150 T400 100" stroke="#1f2a33" stroke-width="6" fill="none"/><path d="M180 0 L210 260" stroke="#1c252d" stroke-width="4" fill="none"/><path d="M0 60 Q150 90 400 40" stroke="#18212a" stroke-width="3" fill="none"/><path d="M60 260 Q90 200 140 190" stroke="#16384f" stroke-width="5" fill="none"/><circle cx="205" cy="148" r="7" fill="#4d94d6"/><circle cx="205" cy="148" r="16" fill="none" stroke="#4d94d6" stroke-opacity=".4"/></svg>
+          <div class="kl"><div class="b">Standort</div><div class="mono" style="font-size:12px">Wache · fest eingestellt</div></div></div>
+        <div class="p"><div class="b">Wetter · jetzt</div>
+          <div style="display:flex;align-items:baseline;gap:10px"><span class="gr">11°</span><span>bedeckt</span></div>
+          <div class="z"><span>Wind</span><span>SW 18 km/h · Böen 34</span></div>
+          <div class="z"><span>Niederschlag</span><span>0,2 mm/h</span></div>
+          <div class="z"><span>Sonnenuntergang</span><span>16:58</span></div>
+          <div class="vh"><div>09<br>11°</div><div>12<br>13°</div><div>15<br>12°</div><div>18<br>9°</div></div></div>
+      </div>
+      <div class="f"><span>DWD/NINA · Stand 07:40</span><span>Karte offline</span><span>lokal · ohne Anmeldung</span></div>
+    </div></div>
+  </div>
+
+  <div id="z-warn" role="tabpanel" aria-labelledby="t-warn" class="sek" hidden>
+    <p class="zust-text">Für den Landkreis gilt eine amtliche Warnung. Sie erscheint als Band oben, auf der Karte liegen Warngebiet und Regenradar. Die Stufe steht immer auch als Wort da, nie nur als Farbe.</p>
+    <div class="buehne"><div class="lm">
+      <div class="k"><div class="m">+</div><span class="wm">LAGEMONITOR · FüKw 40-12-1</span><span class="st" style="color:var(--al)"><span class="pt" style="background:var(--al)"></span>1 WARNUNG · Stufe 3</span><span class="uhr">17:22:05</span></div>
+      <div style="display:grid;grid-template-rows:auto 1fr;gap:1px;min-height:0">
+        <div class="p" style="background:var(--alFS);flex-direction:row;align-items:center;gap:18px;padding:10px 14px">
+          <span class="tg" style="background:var(--al);color:#08090b">UNWETTER · STUFE 3</span>
+          <span style="font-size:20px;font-weight:600">Orkanartige Böen bis 110 km/h</span>
+          <span class="mono" style="margin-left:auto;color:var(--al)">bis 23:00 · DWD</span></div>
+        <div style="display:grid;grid-template-columns:2.2fr 1fr;gap:1px;min-height:0">
+          <div class="p ka"><svg viewBox="0 0 400 220" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="400" height="220" fill="#0b1013"/><path d="M0 160 Q120 120 200 130 T400 80" stroke="#1f2a33" stroke-width="6" fill="none"/><path d="M180 0 L210 220" stroke="#1c252d" stroke-width="4" fill="none"/><polygon points="40,20 330,10 380,150 250,210 60,190" fill="rgba(255,107,107,.12)" stroke="#ff6b6b" stroke-dasharray="6 4"/><ellipse cx="120" cy="90" rx="60" ry="30" fill="rgba(77,148,214,.35)"/><ellipse cx="150" cy="95" rx="25" ry="14" fill="rgba(232,204,58,.45)"/><circle cx="205" cy="128" r="7" fill="#4d94d6"/></svg>
+            <div class="kl"><div class="b">Warngebiet + Radar</div><div class="mono" style="font-size:12px">Radar 17:20 · Zelle zieht nach NO</div></div></div>
+          <div class="p"><div class="b">Wetter · jetzt</div>
+            <div style="display:flex;align-items:baseline;gap:10px"><span class="gr">14°</span><span>Sturm</span></div>
+            <div class="z"><span>Böen</span><span style="color:var(--al)">97 km/h</span></div>
+            <div class="z"><span>Niederschlag</span><span>6,4 mm/h</span></div>
+            <div class="b" style="margin-top:8px">Weitere Warnungen</div>
+            <div class="z" style="background:var(--acF);padding:4px"><span>Gewitter</span><span style="color:var(--ac)">Stufe 2</span></div></div>
+        </div>
+      </div>
+      <div class="f"><span>DWD/NINA · Stand 17:21</span><span>Radar online</span><span>lokal · ohne Anmeldung</span></div>
+    </div></div>
+  </div>
+
+  <div id="z-schau" role="tabpanel" aria-labelledby="t-schau" class="sek" hidden>
+    <p class="zust-text">Der Schaufenster-Modus wird in der Verwaltung eingeschaltet. Zur Ruheansicht kommt eine Kachel, die Besuchern erklärt, was der Bildschirm im Einsatz zeigt. Amtliche Warnungen brechen trotzdem durch.</p>
+    <div class="buehne"><div class="lm">
+      <div class="k"><div class="m">+</div><span class="wm">LAGEMONITOR · FüKw 40-12-1</span><span class="st" style="color:var(--bd)"><span class="pt" style="background:var(--bd)"></span>SCHAUFENSTER</span><span class="uhr">11:05:47</span></div>
+      <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:1px;min-height:0">
+        <div class="p ka"><svg viewBox="0 0 300 260" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="300" height="260" fill="#0b1013"/><path d="M0 180 Q100 140 160 150 T300 100" stroke="#1f2a33" stroke-width="6" fill="none"/><path d="M140 0 L170 260" stroke="#1c252d" stroke-width="4" fill="none"/><circle cx="160" cy="150" r="7" fill="#4d94d6"/></svg>
+          <div class="kl"><div class="b">Wir stehen hier</div><div class="mono" style="font-size:12px">Marktplatz · fest eingestellt</div></div></div>
+        <div class="p"><div class="b">Wetter</div>
+          <div style="display:flex;align-items:baseline;gap:10px"><span class="gr">16°</span><span>heiter</span></div>
+          <div class="z"><span>Wind</span><span>W 9 km/h</span></div>
+          <div class="vh"><div>12<br>17°</div><div>14<br>18°</div><div>16<br>17°</div><div>18<br>14°</div></div></div>
+        <div class="p"><div class="b">Was ist das hier?</div>
+          <div style="font-family:var(--f-kopf);font-size:20px;font-weight:600;line-height:1.15">Information &amp; Kommunikation im Einsatz</div>
+          <div style="color:var(--gd);font-size:12px">Dieser Bildschirm zeigt im Einsatz Lage, Wetter und Drohnenbild, live aus dem Führungskraftwagen.</div>
+          <div style="margin-top:auto;display:flex;gap:10px;align-items:center"><div style="width:64px;height:64px;background:repeating-conic-gradient(#e8ebee 0 25%,#0f1215 0 50%) 0 0/16px 16px"></div><span style="font-size:12px">Mitmachen?<br><span class="mono" style="color:var(--bd)">QR scannen</span></span></div></div>
+      </div>
+      <div class="f"><span>DWD/NINA · Stand 11:05</span><span>Schaufenster aus der Verwaltung</span></div>
+    </div></div>
+  </div>
+</section>
+
+<section class="sek" aria-labelledby="h-rel">
+  <div class="braue">Verhalten</div>
+  <h2 id="h-rel">Was gerade wichtig ist, bekommt Platz</h2>
+  <p>Jede Kachel weiß selbst, ob sie gerade etwas zu sagen hat. Die Regeln stecken im Programm, nicht in einem Regel-Editor. In der Verwaltung lassen sich nur Reihenfolge, Pinnen, Ausblenden und einzelne Einstellungen ändern.</p>
+  <div class="tab"><table>
+    <thead><tr><th>Wenn …</th><th>dann …</th><th>ab</th></tr></thead>
+    <tbody>
+      <tr><td>eine amtliche Warnung über der Schwelle gilt</td><td>erscheint oben ein Warnband, das Warngebiet liegt auf der Karte. Es bricht immer durch, auch im Schaufenster oder bei einer erzwungenen Ansicht.</td><td><span class="chip v1">V1</span></td></tr>
+      <tr><td>Warnungen unter der Schwelle gelten</td><td>stehen sie als Liste in der Wetterkachel. Sie rücken nicht nach vorn, verschwinden aber nicht.</td><td><span class="chip v1">V1</span></td></tr>
+      <tr><td>Internet da ist</td><td>liegt der Regenradar auf der Karte. Ohne Verbindung fällt er weg, und die Fußzeile meldet den alten Datenstand.</td><td><span class="chip v1">V1</span></td></tr>
+      <tr><td>nichts anliegt</td><td>bleibt die Ruheansicht oder, wenn eingeschaltet, das Schaufenster.</td><td><span class="chip v1">V1</span></td></tr>
+      <tr><td>eine Lagemeldung eingetragen ist</td><td>steht sie als Text auf dem Monitor, bis sie gelöscht wird.</td><td><span class="chip spaeter">SPÄTER</span></td></tr>
+      <tr><td>in Suchlage eine Drohne fliegt</td><td>rückt das Livebild nach vorn.</td><td><span class="chip spaeter">SPÄTER</span></td></tr>
+      <tr><td>in Lifeline Hub ein Einsatz läuft</td><td>kommen Lagekarte mit Einsatzzeichen, Kräfte und Betroffene dazu.</td><td><span class="chip spaeter">SPÄTER</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sek" aria-labelledby="h-auf">
+  <div class="braue">Technik</div>
+  <h2 id="h-auf">Aufbau</h2>
+  <p>Alles, was der Monitor braucht, liegt auf dem Server im Fahrzeug. Fällt die Verbindung weg, läuft er weiter. Nur Wetter und Warnungen werden dann alt, und das sieht man.</p>
+  <div class="tab" style="padding:16px;background:var(--grund)"><div class="aufbau">
+    <div class="spalte">
+      <div class="kopfz braue">Quellen</div>
+      <div>NINA-Warnungen <span class="chip v1">V1</span><div class="klein">DWD, MoWaS, KATWARN, Hochwasser</div></div>
+      <div>DWD-Wetter und Radar <span class="chip v1">V1</span></div>
+      <div>Kartenpaket Deutschland <span class="chip v1">V1</span><div class="klein">offline, Bau wie in Lifeline Hub</div></div>
+      <div>Suchlage <span class="chip spaeter">SPÄTER</span></div>
+      <div>Lifeline Hub <span class="chip spaeter">SPÄTER</span></div>
+    </div>
+    <div class="pfeil" aria-hidden="true">→</div>
+    <div class="spalte kern">
+      <div class="kopfz braue">Server im FüKw</div>
+      <div><h3>Lagemonitor</h3><div class="klein">holt und speichert die Daten mit Zeitstempel, entscheidet, was Platz bekommt</div></div>
+      <div><h3>Verwaltung</h3><div class="klein">Standort, Warnregion, Pinnen, Schaufenster</div></div>
+      <div class="klein">Rust · React · Lifeline-Design · SQLite</div>
+    </div>
+    <div class="pfeil" aria-hidden="true">→</div>
+    <div class="spalte">
+      <div class="kopfz braue">Bildschirme</div>
+      <div>Kiosk am Server<div class="klein">ohne Anmeldung</div></div>
+      <div>Geräte im Fahrzeugnetz<div class="klein">ohne Anmeldung</div></div>
+      <div>Von unterwegs<div class="klein">Tailscale oder Cloudflare, mit Pocket ID</div></div>
+      <div>Verwaltung<div class="klein">Kachel in der iuk-suite, mit Pocket ID</div></div>
+    </div>
+  </div></div>
+</section>
+
+<section class="sek" aria-labelledby="h-zug">
+  <div class="braue">Zugriff</div>
+  <h2 id="h-zug">Wer sieht was</h2>
+  <div class="tab"><table>
+    <thead><tr><th>Weg</th><th>Monitor</th><th>Verwaltung</th></tr></thead>
+    <tbody>
+      <tr><td>Bildschirm am Server und Geräte im Fahrzeugnetz</td><td>ohne Anmeldung</td><td>mit Pocket ID</td></tr>
+      <tr><td>Von außen über Tailscale oder Cloudflare Tunnel</td><td>mit Pocket ID, eigene Gruppe</td><td>mit Pocket ID, Admin-Gruppe</td></tr>
+    </tbody>
+  </table></div>
+  <p class="hinweis">Ob ein Zugriff lokal ist, entscheidet der Port, nicht die Absender-Adresse. Über den Cloudflare-Tunnel kommt jede Anfrage scheinbar vom Server selbst. Eine Adressprüfung würde dort jeden durchlassen. Zusätzlich sperrt eine Firewall die Mobilfunk- und Sat-Anschlüsse, auch für IPv6.</p>
+  <p>Die Verwaltung braucht Internet für die Anmeldung. Die Sitzung hält danach rund zwei Wochen, ein Funkloch wirft also niemanden raus.</p>
+</section>
+
+<section class="sek" aria-labelledby="h-q">
+  <div class="braue">Recherche vom 27.10.2026</div>
+  <h2 id="h-q">Welche Systeme sich anbinden lassen</h2>
+  <div class="tab"><table>
+    <thead><tr><th>System</th><th>Lesbar?</th><th>Folge</th></tr></thead>
+    <tbody>
+      <tr><td>NINA (BBK)</td><td><span class="chip v1">JA</span></td><td>Warnungen je Landkreis, ohne Schlüssel. Grundlage des Warnbands.</td></tr>
+      <tr><td>DWD-Wetter</td><td><span class="chip v1">JA</span></td><td>Aktuelle Werte und Vorhersage, z. B. über Bright Sky.</td></tr>
+      <tr><td>Fireboard Suite</td><td><span class="chip nein">NEIN</span></td><td>Daten gehen nur hinein, heraus kommt ein XML- oder JSON-Export, kein Live-Zugriff. Kein ETB-Auszug, bis der Hersteller einen Weg nennt.</td></tr>
+      <tr><td>aPager / Alamos</td><td><span class="chip nein">NEIN</span></td><td>Die Schnittstelle kann nur Rückmeldungen senden, nicht lesen. Kräfte kommen später aus Lifeline Hub.</td></tr>
+      <tr><td>Lifeline Hub</td><td><span class="chip spaeter">SPÄTER</span></td><td>Hat einen eigenen Lagemonitor, der aber nur für gekoppelte Geräte gilt. Die Anbindung ist als Aufgabe LLH-1484 vorgemerkt.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sek" aria-labelledby="h-off">
+  <div class="braue">Noch zu klären</div>
+  <h2 id="h-off">Offene Punkte</h2>
+  <ul class="liste">
+    <li><span class="m">Hardware</span><span>Bildschirm, Auflösung und Grafikkarte des Servers. Als Erstes testen, ob der Kiosk-Browser darauf sauber läuft.</span></li>
+    <li><span class="m">Router</span><span>Welches Modell im FüKw steckt. Davon hängt ab, ob der Standort später automatisch per GPS kommt.</span></li>
+    <li><span class="m">Fernzugang</span><span>Tailscale oder Cloudflare Tunnel. Das wird gerade getestet, der Monitor kann mit beidem umgehen.</span></li>
+    <li><span class="m">Fireboard</span><span>Anfrage beim Hersteller, ob Einträge live gelesen werden können.</span></li>
+  </ul>
+  <p class="klein">Ausführliches Design im privaten Repo <span class="mono">rubenvitt/lagemonitor</span> unter <span class="mono">docs/superpowers/specs/</span>.</p>
+</section>
+
+</main>
+
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function zeige(t){
+    tabs.forEach(function(x){
+      var an=x===t;
+      x.setAttribute('aria-selected',an?'true':'false');
+      x.tabIndex=an?0:-1;
+      document.getElementById(x.getAttribute('aria-controls')).hidden=!an;
+    });
+  }
+  tabs.forEach(function(t,i){
+    t.tabIndex=i===0?0:-1;
+    t.addEventListener('click',function(){zeige(t)});
+    t.addEventListener('keydown',function(e){
+      var d=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0;
+      if(!d)return;
+      var n=tabs[(i+d+tabs.length)%tabs.length];zeige(n);n.focus();
+    });
+  });
+})();
+</script>
