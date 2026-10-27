@@ -31,3 +31,35 @@ pub struct Region {
     pub ars: String,
     pub name: String,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub enum Provider {
+    Dwd,
+    Mowas,
+    Katwarn,
+    Biwapp,
+    Lhp,
+    Police,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct Warning {
+    pub id: String,
+    pub provider: Provider,
+    pub event: String,
+    pub headline: String,
+    pub description: String,
+    pub instruction: Option<String>,
+    pub severity: Severity,
+    pub level_label: String,
+    pub onset: Option<String>,
+    pub expires: Option<String>,
+    pub sender_name: Option<String>,
+    /// GeoJSON-FeatureCollection; `null`, wenn NINA keine Geometrie liefert.
+    #[ts(type = "unknown")]
+    pub geometry: Option<serde_json::Value>,
+}

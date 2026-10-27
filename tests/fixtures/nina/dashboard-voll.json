@@ -1,0 +1,72 @@
+[
+ {
+  "id": "dwd.2.49.0.0.276.0.DWD.PVW.1793088660000.158c7a98-071d-4205-a733-c4cbc879ce91.MUL",
+  "payload": {
+   "version": 21,
+   "type": "ALERT",
+   "id": "dwd.2.49.0.0.276.0.DWD.PVW.1793088660000.158c7a98-071d-4205-a733-c4cbc879ce91.MUL",
+   "hash": "1166151da2953464f69d8e283df025b2deb5335a632ce10d650dbfaa17b5bbb1",
+   "data": {
+    "headline": "Amtliche WARNUNG vor STURMBÖEN",
+    "provider": "DWD",
+    "severity": "Moderate",
+    "urgency": "Immediate",
+    "msgType": "Alert",
+    "area": {
+     "type": "ZGEM",
+     "data": "7087"
+    },
+    "valid": true
+   }
+  },
+  "i18nTitle": {
+   "de": "Amtliche WARNUNG vor STURMBÖEN",
+   "en": "Official WARNING of GALE-FORCE GUSTS",
+   "ar": "تحذير رسمي من هبوب عواصف",
+   "es": "AVISO oficial de TURBONADA",
+   "fr": "ALERTE officielle INTEMPÉRIES PRONONCÉES pour RAFALES DE FORCE FORT COUP DE VENT",
+   "pl": "Oficjalne OSTRZEŻENIE METEOROLOGICZNE (2. STOPNIA) przed WICHURAMI",
+   "ru": "Официальное предупреждение о значительных погодных явлениях: Шквалы штормового ветра",
+   "tr": "FIRTINA ESİNTİLERİNE karşı resmi UYARI"
+  },
+  "sent": "2026-10-27T09:10:36+01:00",
+  "onset": "2026-10-27T09:11:00+01:00",
+  "expires": "2026-10-27T23:00:00+01:00",
+  "effective": "2026-10-27T09:11:00+01:00"
+ },
+ {
+  "id": "mow.DE-SL-SLS-W038-20260904-000",
+  "payload": {
+   "version": 19,
+   "type": "ALERT",
+   "id": "mow.DE-SL-SLS-W038-20260904-000",
+   "hash": "7af2f725c2be7120b31ad49ec8e36aeb1ba26788f6726bc6c51cb5562dbdc131",
+   "data": {
+    "headline": "1. AKTUALISIERUNG: Bakteriologische Beeinträchtigung des Trinkwassers - Chlorung - Biringen, Fürweiler,...",
+    "provider": "MOWAS",
+    "severity": "Minor",
+    "urgency": "Immediate",
+    "msgType": "Update",
+    "transKeys": {
+     "event": "BBK-EVC-069"
+    },
+    "area": {
+     "type": "ZGEM",
+     "data": "5981,100001"
+    },
+    "valid": true
+   }
+  },
+  "i18nTitle": {
+   "de": "1. AKTUALISIERUNG: Bakteriologische Beeinträchtigung des Trinkwassers - Chlorung - Biringen, Fürweiler, Gerlfangen und Oberesch - Gde. ReSi",
+   "en": "Contaminated drinking water",
+   "ar": "تلوث مياه الشرب",
+   "es": "Contaminación de agua potable",
+   "fr": "Pollution de l'eau potable",
+   "pl": "Zanieczyszczenie wody pitnej",
+   "ru": "Загрязнение питьевой воды",
+   "tr": "İçme suyu kirlenmesi"
+  },
+  "sent": "2026-09-04T13:05:28+02:00"
+ }
+]
