@@ -241,6 +241,8 @@
   transform: translateX(calc(100% + 24px));
   transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
   box-shadow: -18px 0 36px rgba(0, 0, 0, 0.35);
+  /* Über den Bedienelementen der Karte (maplibre: z-index 2), sonst liegt die Attribution auf dem Bild. */
+  z-index: 3;
 }
 .lm-drohne[data-offen='true'] {
   transform: translateX(0);
