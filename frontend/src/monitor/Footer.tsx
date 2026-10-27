@@ -15,7 +15,6 @@ export default function Footer({ view }: { view?: MonitorView }) {
   return (
     <footer className="lm-fuss">
       {state && <span className={state.alert ? 'lm-fuss-alarm' : undefined}>{state.text}</span>}
-      {view && <span>{view.map.offline ? 'Karte offline' : 'Karte online'}</span>}
       <span>lokal · ohne Anmeldung</span>
     </footer>
   );

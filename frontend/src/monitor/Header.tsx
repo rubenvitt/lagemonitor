@@ -33,7 +33,13 @@ export default function Header({ view, layout, nowMs, note }: Props) {
   return (
     <header className="lm-kopf">
       <div className="lm-marke" aria-hidden>
-        +
+        {/* Gleiches Zeichen wie public/favicon.svg: Bildschirm mit Kartennadel. */}
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 17v4" />
+          <path d="M12 14.5s-3.5-3.2-3.5-5.8a3.5 3.5 0 0 1 7 0c0 2.6-3.5 5.8-3.5 5.8z" />
+          <circle cx="12" cy="8.7" r="1" />
+        </svg>
       </div>
       <span className="lm-wortmarke">{view ? `LAGEMONITOR · ${view.location.label}` : 'LAGEMONITOR'}</span>
       <span className={`lm-status lm-ton-${tone}`}>
