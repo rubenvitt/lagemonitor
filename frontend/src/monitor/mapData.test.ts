@@ -1,5 +1,5 @@
-import { warningAreas } from './mapData';
-import { makeWarning } from './testViews';
+import { RADAR_MAX_AGE_MS, radarAt, warningAreas } from './mapData';
+import { NOW, makeView, makeWarning } from './testViews';
 
 const square = {
   type: 'FeatureCollection',
@@ -21,4 +21,12 @@ test('Warngebiete tragen ihre Art, Warnungen ohne Geometrie fallen still weg', (
     { name: 'LK', kind: 'band' },
     { name: 'LK', kind: 'listed' },
   ]);
+});
+
+test('Radar nur bei Wetterstand jünger als 15 Minuten', () => {
+  const weather = makeView().weather;
+  expect(radarAt({ ...weather, fetchedAtMs: NOW - RADAR_MAX_AGE_MS }, NOW)).toBe(NOW - RADAR_MAX_AGE_MS);
+  expect(radarAt({ ...weather, fetchedAtMs: NOW - RADAR_MAX_AGE_MS - 1 }, NOW)).toBeNull();
+  expect(radarAt({ ...weather, stale: true }, NOW)).toBeNull();
+  expect(radarAt({ ...weather, data: null, fetchedAtMs: null }, NOW)).toBeNull();
 });

@@ -1,4 +1,4 @@
-import { isClientStale, markStale, selectLayout } from './selectLayout';
+import { isClientStale, markStale, selectLayout, serverNow } from './selectLayout';
 import { HOUR, NOW, makeView, makeWarning } from './testViews';
 
 const withWarnings = (warnings: ReturnType<typeof makeWarning>[], threshold = 'Severe' as const) =>
@@ -80,4 +80,16 @@ test('client_stale_after_90s_or_on_error', () => {
   expect(isClientStale(false, NOW - 90_000, NOW)).toBe(false);
   expect(isClientStale(false, NOW - 90_001, NOW)).toBe(true);
   expect(isClientStale(true, NOW, NOW)).toBe(true);
+});
+
+test('server_now_ignores_skewed_screen_clock', () => {
+  // Bildschirmuhr eine Stunde vor: Die Antwort kam laut Bildschirm um NOW + 1 h, jetzt sind 5 s vergangen.
+  const arrived = NOW + HOUR;
+  expect(serverNow(NOW, arrived, arrived + 5_000)).toBe(NOW + 5_000);
+  const active = makeWarning({ id: 'aktiv', severity: 'Extreme', expires: new Date(NOW + HOUR / 2).toISOString() });
+  expect(selectLayout(withWarnings([active]), serverNow(NOW, arrived, arrived + 5_000)).band).toHaveLength(1);
+  // Server weg: Seine Zeit läuft mit der Bildschirmuhr weiter, Abgelaufenes fällt trotzdem raus.
+  expect(selectLayout(withWarnings([active]), serverNow(NOW, arrived, arrived + HOUR)).band).toEqual([]);
+  // Die Layout-Uhr kann bis zu 30 s hinter der Antwort liegen: nie vor die Serverzeit zurück.
+  expect(serverNow(NOW, arrived, arrived - 20_000)).toBe(NOW);
 });

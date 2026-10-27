@@ -20,10 +20,15 @@ const bySeverityThenOnset = (a: Warning, b: Warning) =>
   RANK[b.severity] - RANK[a.severity] || onsetMs(a) - onsetMs(b);
 
 /**
- * Teilt die Warnungen in Band (ab Schwelle) und Liste (der Rest). `nowMs` ist die Uhr des
- * Bildschirms, nicht `view.nowMs`: Ist der Server weg, steht dessen Zeit still, und abgelaufene
- * Warnungen blieben sonst für immer stehen.
+ * Serverzeit jetzt: `view.nowMs` plus die seit der Antwort vergangene Zeit der Bildschirmuhr.
+ * Eine falsch gehende Bildschirmuhr verschiebt so nichts; ist der Server weg, läuft die Zeit
+ * trotzdem weiter, und Abgelaufenes fällt raus. Nie vor `view.nowMs` zurück.
  */
+export function serverNow(viewNowMs: number, dataUpdatedAt: number, clientNowMs: number): number {
+  return viewNowMs + Math.max(0, clientNowMs - dataUpdatedAt);
+}
+
+/** Teilt die Warnungen in Band (ab Schwelle) und Liste (der Rest). `nowMs` aus `serverNow`. */
 export function selectLayout(view: MonitorView, nowMs: number): Layout {
   const { data, stale } = view.warnings;
   const active = (data ?? [])

@@ -1,4 +1,6 @@
+import type { Sourced } from '../contract/Sourced';
 import type { Warning } from '../contract/Warning';
+import type { Weather } from '../contract/Weather';
 
 interface AreaFeature {
   type: 'Feature';
@@ -29,4 +31,13 @@ export function radarTiles(fetchedAtMs: number): string {
     '&layers=dwd:Niederschlagsradar&styles=&format=image/png&transparent=true' +
     `&srs=EPSG:3857&width=256&height=256&bbox={bbox-epsg-3857}&stand=${fetchedAtMs}`
   );
+}
+
+/** Älter als das zeigt das Radar zu alten Regen: Der DWD-Layer ist ohne Zeitangabe immer „jetzt“. */
+export const RADAR_MAX_AGE_MS = 15 * 60_000;
+
+/** Wetterstand, zu dem das Radar gezeigt wird, oder `null` (Radar aus). `nowMs` in Serverzeit. */
+export function radarAt(weather: Sourced<Weather>, nowMs: number): number | null {
+  const at = weather.fetchedAtMs;
+  return weather.stale || at === null || nowMs - at > RADAR_MAX_AGE_MS ? null : at;
 }

@@ -6,7 +6,8 @@ import Header from './Header';
 import MapPanel from './MapPanel';
 import WarningBand from './WarningBand';
 import WeatherPanel from './WeatherPanel';
-import { UNKNOWN_LAYOUT, isClientStale, markStale, selectLayout } from './selectLayout';
+import { radarAt } from './mapData';
+import { UNKNOWN_LAYOUT, isClientStale, markStale, selectLayout, serverNow } from './selectLayout';
 import './monitor.css';
 
 function useNow(intervalMs: number): number {
@@ -25,7 +26,8 @@ export default function MonitorPage() {
   const layoutNow = useNow(30_000);
   const clientStale = isClientStale(isError, dataUpdatedAt, clockNow);
   const view = useMemo(() => data && markStale(data, clientStale), [data, clientStale]);
-  const layout = useMemo(() => (view ? selectLayout(view, layoutNow) : UNKNOWN_LAYOUT), [view, layoutNow]);
+  const nowMs = view ? serverNow(view.nowMs, dataUpdatedAt, layoutNow) : layoutNow;
+  const layout = useMemo(() => (view ? selectLayout(view, nowMs) : UNKNOWN_LAYOUT), [view, nowMs]);
   useWarnsperre(layout.mode === 'warnung');
 
   if (!view) {
@@ -53,7 +55,7 @@ export default function MonitorPage() {
             offline={view.map.offline}
             band={layout.band}
             listed={layout.listed}
-            radarAt={weather.stale ? null : weather.fetchedAtMs}
+            radarAt={radarAt(weather, nowMs)}
           />
           <WeatherPanel weather={weather} label={location.label} listed={layout.listed} />
         </div>

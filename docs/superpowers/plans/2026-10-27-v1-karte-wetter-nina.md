@@ -279,7 +279,7 @@ Sicherheitsabschnitt: nie `0.0.0.0` binden; Uplink-Firewall (ufw: eingehend deny
 
 - [ ] **Step 1:** Dateien schreiben.
 - [ ] **Step 2:** `docker build -f deploy/Dockerfile -t lagemonitor:v1 .` → baut lokal (macOS: `--platform linux/amd64` nicht nötig für den Test).
-- [ ] **Step 3:** Container lokal starten (auf macOS ohne host-Netz: `-p 127.0.0.1:8080:8080 -e LAGEMONITOR_BIND=0.0.0.0:8080` nur für diesen Test), `curl -s 127.0.0.1:8080/api/health` → `{"status":"ok"}`.
+- [ ] **Step 3:** Container lokal mit Host-Netz starten (`docker run --rm --network host lagemonitor:v1`, Standard-Bind `127.0.0.1:8080`; auf macOS mit OrbStack, `0.0.0.0` wird abgelehnt), `curl -s 127.0.0.1:8080/api/health` → `{"status":"ok"}`.
 - [ ] **Step 4:** Workflow syntaktisch prüfen (`actionlint`, falls installiert; sonst YAML-Parse mit `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/workflows/ci.yml`). Die CI selbst läuft erst nach dem Push – das macht der Controller.
 - [ ] **Step 5:** `scripts/check.sh` → grün.
 - [ ] **Step 6: Commit** `feat: Image aus der CI und Docker-Anleitung für den FüKw-Server`
