@@ -6,6 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Läufe je Ref ganz hintereinander: Sonst kann ein älterer Lauf `latest` nach
+# einem neueren schieben, und deploy-compose zieht `latest`. PR-Läufe dürfen
+# sich gegenseitig abbrechen.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: rubenvitt/lagemonitor
@@ -40,11 +47,6 @@ jobs:
   image:
     needs: check
     runs-on: ubuntu-latest
-    # Hintereinander, damit ein älterer Lauf `latest` nicht nach einem neueren
-    # überschreibt; deploy-compose zieht `latest`.
-    concurrency:
-      group: image-${{ github.ref }}
-      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
