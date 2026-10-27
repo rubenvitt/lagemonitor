@@ -54,11 +54,16 @@ fn notice(raw: RawNotice) -> Result<Notice, SourceError> {
 }
 
 /// Ein QR-Code führt nur auf `https://`; alles andere fällt still weg, der Rest der Konfiguration gilt.
+/// Höchstlänge wie in der Suite: so passt die Adresse sicher in einen QR-Code (Stufe M), und das
+/// Kodieren im Browser kann nicht scheitern.
+const RECRUITMENT_URL_MAX: usize = 300;
+
 fn recruitment(r: Option<Recruitment>) -> Option<Recruitment> {
     r.filter(|r| {
-        Url::parse(&r.url)
-            .map(|u| u.scheme() == "https" && u.host_str().is_some())
-            .unwrap_or(false)
+        r.url.len() <= RECRUITMENT_URL_MAX
+            && Url::parse(&r.url)
+                .map(|u| u.scheme() == "https" && u.host_str().is_some())
+                .unwrap_or(false)
     })
 }
 
@@ -146,6 +151,16 @@ pub(crate) mod tests {
         let body = EXAMPLE.replace(
             "\"suchlage\": {",
             r#""recruitment": { "url": "javascript:alert(1)", "text": "x" }, "suchlage": {"#,
+        );
+        assert_eq!(parse(body.as_bytes()).unwrap().recruitment, None);
+    }
+
+    #[test]
+    fn recruitment_url_has_a_length_limit() {
+        let lang = format!("https://example.org/{}", "a".repeat(300));
+        let body = EXAMPLE.replace(
+            "\"suchlage\": {",
+            &format!(r#""recruitment": {{ "url": "{lang}", "text": "x" }}, "suchlage": {{"#),
         );
         assert_eq!(parse(body.as_bytes()).unwrap().recruitment, None);
     }
