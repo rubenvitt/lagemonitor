@@ -13,7 +13,7 @@ function dataState({ weather, warnings }: MonitorView): { text: string; alert: b
 export default function Footer({ view }: { view?: MonitorView }) {
   const state = view && dataState(view);
   return (
-    <footer className="lm-fuss">
+    <footer className="lm-fuss" data-theme="dark">
       {state && <span className={state.alert ? 'lm-fuss-alarm' : undefined}>{state.text}</span>}
       <span>lokal · ohne Anmeldung</span>
     </footer>

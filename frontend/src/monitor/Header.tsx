@@ -31,7 +31,8 @@ interface Props {
 export default function Header({ view, layout, nowMs, note }: Props) {
   const { text, tone } = status(layout, view?.warnings.fetchedAtMs ?? null);
   return (
-    <header className="lm-kopf">
+    // Der Kopf liegt im Rahmen und bleibt dunkel; Statusfarben daher immer aus dem dunklen Satz.
+    <header className="lm-kopf" data-theme="dark">
       <div className="lm-marke" aria-hidden>
         {/* Gleiches Zeichen wie public/favicon.svg: Bildschirm mit Kartennadel. */}
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

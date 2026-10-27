@@ -164,7 +164,11 @@
   top: 12px;
   padding: 8px 12px;
   background: var(--lfh-rahmen-grund);
+  color: var(--lfh-rahmen-text);
   font-size: 15px;
+}
+.lm-karte-legende .lm-augenbraue {
+  color: var(--lfh-rahmen-gedaempft);
 }
 
 /* ── Wetter ───────────────────────────────────────────────────────────── */

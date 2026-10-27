@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMonitor } from '../api';
-import { useWarnsperre } from '../theme/ThemeModeProvider';
+import { useThemeMode, useWarnsperre } from '../theme/ThemeModeProvider';
 import Footer from './Footer';
 import Header from './Header';
 import MapPanel from './MapPanel';
 import WarningBand from './WarningBand';
 import WeatherPanel from './WeatherPanel';
+import { isDaylight } from './daylight';
 import { radarAt } from './mapData';
 import { UNKNOWN_LAYOUT, isClientStale, markStale, selectLayout, serverNow } from './selectLayout';
 import './monitor.css';
@@ -29,6 +30,13 @@ export default function MonitorPage() {
   const nowMs = view ? serverNow(view.nowMs, dataUpdatedAt, layoutNow) : layoutNow;
   const layout = useMemo(() => (view ? selectLayout(view, nowMs) : UNKNOWN_LAYOUT), [view, nowMs]);
   useWarnsperre(layout.mode === 'warnung');
+
+  // Hell zwischen Sonnenauf- und -untergang am eingestellten Ort; ohne Daten bleibt der letzte Stand.
+  const { setModus } = useThemeMode();
+  const daylight = view ? isDaylight(view.location.lat, view.location.lon, layoutNow) : null;
+  useEffect(() => {
+    if (daylight !== null) setModus(daylight ? 'light' : 'dark');
+  }, [daylight, setModus]);
 
   if (!view) {
     const note = isPending ? 'lädt' : 'Server nicht erreichbar';
