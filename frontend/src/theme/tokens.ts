@@ -325,6 +325,9 @@ export const rahmenFarben = {
  * Abdunkelung, die Palette ist ein Fokusmoment, kein Farbträger. Hier statt in der Palette,
  * damit der Wert an der Farbquelle steht und nicht als Literal in einer Komponente (LFH-797).
  */
+/** QR-Code: immer Schwarz auf Weiß, auch nachts. Ein invertierter Code liest nicht jedes Telefon. */
+export const qrFarben = { code: '#000000', grund: '#ffffff' } as const;
+
 export const paletteMaske = 'rgba(5, 6, 8, 0.72)';
 
 /** Abstandsraster einer Dichtestufe. Komponenten importieren diese Werte, statt Pixel zu

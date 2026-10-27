@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::contract::{Location, Modules, Region, Severity};
+use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity};
 use crate::error::AppError;
 
 /// Verbindung zu Suchlage: Adresse und Großbild-Token, dazu, was vom Einsatz erscheint.
@@ -26,6 +26,9 @@ pub struct Settings {
     pub warn_threshold: Severity,
     pub modules: Modules,
     pub suchlage: Option<SuchlageLink>,
+    /// Meldungen fürs Band; auch abgelaufene bleiben bis zur nächsten Abholung hier stehen.
+    pub notices: Vec<Notice>,
+    pub recruitment: Option<Recruitment>,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -44,6 +47,8 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
             .unwrap_or(Severity::Severe),
         modules: get(pool, "modules").await?.unwrap_or_default(),
         suchlage: get(pool, "suchlage").await?.flatten(),
+        notices: get(pool, "notices").await?.unwrap_or_default(),
+        recruitment: get(pool, "recruitment").await?.flatten(),
     })
 }
 
@@ -55,6 +60,8 @@ pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
         ("warn_threshold", to_json(&s.warn_threshold)?),
         ("modules", to_json(&s.modules)?),
         ("suchlage", to_json(&s.suchlage)?),
+        ("notices", to_json(&s.notices)?),
+        ("recruitment", to_json(&s.recruitment)?),
     ];
     let mut tx = pool.begin().await?;
     for (key, value) in rows {
@@ -105,6 +112,8 @@ mod tests {
         assert_eq!(s.warn_threshold, Severity::Severe);
         assert_eq!(s.modules, Modules::default());
         assert_eq!(s.suchlage, None);
+        assert!(s.notices.is_empty());
+        assert_eq!(s.recruitment, None);
     }
 
     #[tokio::test]
@@ -120,6 +129,16 @@ mod tests {
             video: true,
         });
         s.warn_threshold = Severity::Minor;
+        s.notices = vec![Notice {
+            id: "n1".into(),
+            text: "Nächste Lagebesprechung".into(),
+            countdown_to_ms: Some(1_800_000_000_000),
+            expires_at_ms: 1_800_000_600_000,
+        }];
+        s.recruitment = Some(Recruitment {
+            url: "https://drk.example.org/mitmachen".into(),
+            text: "Lust mitzuhelfen?".into(),
+        });
         save(&pool, &s).await.unwrap();
         assert_eq!(load(&pool).await.unwrap(), s);
         s.suchlage = None;

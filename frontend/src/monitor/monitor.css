@@ -323,3 +323,72 @@
 .lm .maplibregl-ctrl-attrib a {
   color: inherit;
 }
+
+/* ── Meldungen aus der IUK-Suite ──────────────────────────────────────────
+   Unter dem Warnband; ruhiges Blau, damit es nicht mit einer Warnung verwechselt wird. */
+.lm-meldungen {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lm-meldung {
+  background: var(--lfh-bedien-flaeche);
+  border-left: 8px solid var(--lfh-bedien);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 22px 10px 14px;
+}
+.lm-meldung-kuerzel {
+  background: var(--lfh-bedien);
+  color: var(--lfh-auf-bedien);
+  padding: 3px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lm-meldung-text {
+  font-size: 28px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-meldung-zeit {
+  margin-left: auto;
+  font-family: var(--lfh-schrift-zahl);
+  font-variant-numeric: tabular-nums;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--lfh-bedien-text);
+  white-space: nowrap;
+}
+
+/* ── QR-Code fürs Ehrenamt ────────────────────────────────────────────────
+   Unten rechts auf der Karte, über der Quellenangabe von maplibre (z-index 2). */
+.lm-mitmachen {
+  position: absolute;
+  right: 14px;
+  bottom: 30px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 420px;
+  padding: 12px;
+  background: var(--lfh-rahmen-grund);
+  color: var(--lfh-rahmen-text);
+}
+.lm-mitmachen-code {
+  padding: 8px;
+  flex: none;
+  line-height: 0;
+}
+.lm-mitmachen-text {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}

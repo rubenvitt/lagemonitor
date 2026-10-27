@@ -3,6 +3,8 @@ import type { ConfigState } from "./ConfigState";
 import type { Location } from "./Location";
 import type { MapInfo } from "./MapInfo";
 import type { Modules } from "./Modules";
+import type { Notice } from "./Notice";
+import type { Recruitment } from "./Recruitment";
 import type { Region } from "./Region";
 import type { Severity } from "./Severity";
 import type { Sourced } from "./Sourced";
@@ -14,4 +16,12 @@ export type MonitorView = { nowMs: number, location: Location, region: Region, w
 /**
  * `null`, wenn das Modul aus oder Suchlage nicht verbunden ist.
  */
-suchlage: Sourced<SuchlageView> | null, };
+suchlage: Sourced<SuchlageView> | null, 
+/**
+ * Laufende Meldungen, die zuerst angelegte oben.
+ */
+notices: Array<Notice>, 
+/**
+ * `null`: kein QR-Code fürs Ehrenamt.
+ */
+recruitment: Recruitment | null, };
