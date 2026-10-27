@@ -1,0 +1,12 @@
+node_modules
+target/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+*.local
+.env*
+.DS_Store
+*.log
+data/
+*.tsbuildinfo
+.superpowers/
