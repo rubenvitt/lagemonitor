@@ -1,0 +1,389 @@
+/* Übernommen aus Suchlage d621418 (27.10.2026): frontend/src/theme/sprache.css */
+/* Übernommen aus Lifeline Hub 3eb9115f2 (16.10.2026): frontend/src/theme/sprache.css */
+/* Gestaltungssprache „E · Lagekarte nachts" (LFH-352 · A0) — die Bausteine.
+   ============================================================================
+   Alles hier liest ausschließlich `--lfh-*` aus `rollen.css` — kein Literalwert,
+   keine zweite Farbentscheidung. Wer eine Farbe hart einträgt, hebelt die Sprache aus.
+
+   NICHT ANTD: diese Bausteine kommen ohne antd-Komponenten aus. Nicht aus
+   Prinzip, sondern weil antd seine eigene Formensprache mitbringt (Radien,
+   Schatten, Polsterung) und sie genau da überschreiben würde, wo die Handschrift
+   sitzt. Formulare, Tabellen und Overlays bleiben antd — mit den Tokens aus
+   `tokens.ts`.
+
+   NEUENTWURF „INSTRUMENTENTAFEL" (21.09.2026, `docs/design/2026-09-21-neuentwurf/`):
+   Paneele auf `--lfh-paneel` mit Haarlinie `--lfh-linie`, Augenbrauen (10 px, 600,
+   Versalien, `--lfh-schwach`), Fugenraster (`gap: 1px`, die Zelle zeichnet die Fuge), Zeilentrenner
+   `--lfh-flaeche-3`, Status als getönte Fläche. Die Bausteine dazu sind React-Komponenten
+   (`components/instrument/`); hier steht nur, was inline nicht geht.
+
+   AUFGERÄUMT am 22.09.2026: die A0-Klassen ohne Erzeuger im Quelltext sind entfallen —
+   Fläche mit Kartenraster samt Container-Staffel (`.lfh-flaeche`, 1100/700 px), Marke
+   und Akzentstrich, Formzeichen (`.lfh-zeichen--*`), Instrumentenband, Kachel-Innenteile,
+   Werteblöcke, Plaketten, Leer-/Fehler-Innenteile und der Blankknopf. Die vier letzten
+   Klassen ohne Erzeuger (`.lfh-kennzahlen`, `.lfh-kz`, `.lfh-zeile`, `.lfh-kachel__mehr`)
+   lebten nur noch als e2e-Selektor; seit `gate1-ueberlauf` und `gate3-trefflaeche` auf die
+   Anker des neuen Lage-Dashboards zeigen (`[data-lfh="kennzahl"]`, `[data-lfh="paneel-link"]`),
+   sind auch sie entfallen.
+   ========================================================================== */
+
+/* ── Signatur 3 · Zahlen als Instrument ────────────────────────────────────
+   `tabular-nums` überall, wo fachlich gezählt oder verglichen wird. Ziffern-
+   flattern in einer Stärkeangabe ist ein Lesefehler, kein Schönheitsfehler. */
+.lfh-zahl {
+  font-family: var(--lfh-schrift-zahl);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0;
+}
+
+.lfh-zahl--mittel {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+/* ── Signatur 5 · Gesperrte Versalien als Metadaten-Stimme ─────────────────
+   Der Unterschied zwischen Formular und Werkzeug. */
+/* Seit dem Neuentwurf die AUGENBRAUE: 10 px, 600, Sperrung .14em, `schwach` — dieselbe
+   Stimme wie `components/instrument/Augenbraue.tsx` (TS-Seite `schriftskala.augenbraue`). */
+.lfh-etikett {
+  font-size: var(--lfh-typo-augenbraue-groesse);
+  font-weight: var(--lfh-typo-augenbraue-gewicht);
+  letter-spacing: var(--lfh-typo-augenbraue-sperrung);
+  text-transform: uppercase;
+  color: var(--lfh-schwach);
+  white-space: nowrap;
+}
+
+/* ── Werteblöcke ───────────────────────────────────────────────────────────── */
+.lfh-felder {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--lfh-linie);
+  border: 1px solid var(--lfh-linie);
+}
+
+.lfh-feld {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--lfh-luft-2);
+  background: var(--lfh-flaeche);
+}
+
+.lfh-feld--alarm .lfh-zahl {
+  color: var(--lfh-alarm-text);
+}
+.lfh-feld--achtung .lfh-zahl {
+  color: var(--lfh-achtung-text);
+}
+
+/* ── Datenzustände: LADEN, FEHLER und LEER sehen verschieden aus ───────────
+   Der Sweep-Befund lautet „Fehler sieht aus wie leer" — wer daraus eine Lage
+   funkt, funkt falsch. Deshalb tragen sie hier verschiedene Form UND Wortlaut. */
+.lfh-skelett {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lfh-luft-2);
+  padding: var(--lfh-luft-1) 0;
+}
+
+.lfh-skelett__balken {
+  height: 12px;
+  width: 100%;
+  background: var(--lfh-flaeche-3);
+  animation: lfh-puls 1.4s ease-in-out infinite;
+}
+
+.lfh-skelett__balken--gross {
+  height: 26px;
+  width: 55%;
+}
+.lfh-skelett__balken--kurz {
+  width: 35%;
+}
+
+@keyframes lfh-puls {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* Fehler als getönte Fläche — dieselbe Rolle wie die Statusfläche der Bausteine
+   (`--lfh-alarm-flaeche`, deckend). Die Innenteile trägt `SeitenZustand` inline. */
+.lfh-fehler {
+  display: flex;
+  gap: var(--lfh-luft-3);
+  padding: var(--lfh-luft-3);
+  border: 1px solid var(--lfh-alarm);
+  background: var(--lfh-alarm-flaeche);
+}
+
+/* ══ Bausteine des Neuentwurfs (`components/instrument/`) ═══════════════════
+   Nur, was inline nicht geht: `:hover`, `:focus-visible` und Regeln in
+   antd-Innereien. Geometrie und Farben der Zustände, die ein Test prüfen soll,
+   stehen als Inline-Stil in den Bausteinen (Vitest fährt mit `css: false`). */
+
+/* Fuge des Fugenrasters (LFH-961, `components/instrument/fugenraster.ts`): jede Zelle zeichnet
+   ihren 1-px-Umriss selbst, Nachbarn decken sich in der 1-px-Lücke. Der Rastergrund ist
+   `flaeche`, eine leere Restspur bleibt deshalb Fläche statt grauer Kachel. Hier statt inline,
+   weil das Raster jede Zellart trägt (Kennzahl, Datenfeld, Kopfangabe). */
+[data-fugenraster] > * {
+  outline: 1px solid var(--lfh-linie);
+}
+
+/* Kennzahl im Fugenraster: Grund hier, damit `:hover` ihn überschreiben kann. Mit Ziel steht
+   der Link eingerückt in der Zelle (LFH-630, Einzug 0 / 4 / 8 px je Dichtestufe): Hover und
+   Fokus liegen auf ihm, damit die Tönung die Trefffläche zeigt und nicht den stillen Rand. */
+.lfh-kennzahl {
+  background: var(--lfh-flaeche);
+}
+.lfh-kennzahl__ziel {
+  cursor: pointer;
+  transition: background var(--lfh-uebergang);
+}
+.lfh-kennzahl__ziel:hover {
+  background: var(--lfh-flaeche-3);
+}
+.lfh-kennzahl__ziel:focus-visible {
+  outline: 2px solid var(--lfh-bedien);
+  outline-offset: -2px;
+}
+
+/* Sprunglink von der gewählten Karte ins Detail (`components/ListeDetail.tsx`, ab `lg`): ohne
+   Fokus aus dem Bild genommen, aber in der Tab-Folge; mit Fokus steht er mit seiner Inline-
+   Geometrie (Boden `controlHeight`) unter der Karte. */
+.lfh-sprung-detail:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Vorschaubild eines Anhangs (LFH-759): handgebautes Bedienziel, Fokusring in `bedien` wie oben. */
+.lfh-anhang-vorschau:focus-visible {
+  outline: 2px solid var(--lfh-bedien);
+  outline-offset: -2px;
+}
+
+/* Notizplatz eines Bandes auf schmalem Schirm (LFH-629, `Kennzahlenband notizZeilenSchmal`): im
+   Ladezustand steht einzeilig „wird abgerufen“, mit den Daten brach eine Notiz wie die des
+   Pegels in der halben Bandbreite zweizeilig um, und die Reihe wuchs 16 px. Der Platz steht
+   deshalb vom ersten Bild an. Die Zeilenhöhe ist die der Notiz (`lineHeight: 1.4`), die
+   Schwelle antds `md` wie in `EinsatzSeite.css`. */
+@media (max-width: 767.98px) {
+  .lfh-kennzahlenband--notizzeilen [data-lfh='kennzahl-notiz'] {
+    min-height: calc(var(--lfh-kennzahl-notizzeilen) * 1.4em);
+  }
+  /* Handschuh (LFH-883): die Polsterung von 44 px lässt der Zelle eine Textspalte von rund 94 px.
+     Darin brach „Schäden offen“ zweizeilig um (+13 px) und die Pegel-Notiz dreizeilig (+16 px),
+     beides erst mit den Daten. Der Platz steht deshalb hier vom ersten Bild an: zwei Zeilen
+     Augenbraue (`lineHeight: 1.3`, `augenbraueStil`), eine Notizzeile über dem Boden des Bandes. */
+  [data-dichte='handschuh'] .lfh-kennzahlenband--notizzeilen .lfh-kennzahl__titel {
+    min-height: 2.6em;
+  }
+  [data-dichte='handschuh'] .lfh-kennzahlenband--notizzeilen [data-lfh='kennzahl-notiz'] {
+    min-height: calc((var(--lfh-kennzahl-notizzeilen) + 1) * 1.4em);
+  }
+}
+
+/* Notizhöhe ab `md` (LFH-691, `Kennzahlenband notizZeilen`): Boden UND Deckel. Ohne feste Höhe
+   brach „von ≈ 1 850 geplant · 1 ohne Meldung“ bei 1440 px zweizeilig um und die Pegel-Notiz mit
+   Prognose drei- bis vierzeilig; mit der ersten Standmeldung bzw. dem Ablauf der Prognose sprang
+   das Band samt Paneelen darunter zurück. Eine längere Notiz endet mit „…“, der volle Text bleibt
+   im DOM (zugänglicher Name) und im `title`. Herleitung und verworfene Wege:
+   `openspec/changes/archive/2026-10-01-lfh-691-kennzahl-notiz-feste-hoehe/design.md`. */
+@media (min-width: 768px) {
+  .lfh-kennzahlenband--notizfest [data-lfh='kennzahl-notiz'] {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--lfh-kennzahl-notizzeilen-fest);
+    line-clamp: var(--lfh-kennzahl-notizzeilen-fest);
+    overflow: hidden;
+    min-height: calc(var(--lfh-kennzahl-notizzeilen-fest) * 1.4em);
+  }
+}
+
+/* Segmentleiste — Fugenraster auf `linie-stark`; aktiv `flaeche-3` + Text. Der Entwurf nennt
+   `flaeche-2`; die liegt am Tag bei 1,08 : 1 auf `flaeche` und hebt nichts hervor, nachts
+   trennen `flaeche-2` und `flaeche-3` nur 1,02 : 1 (LFH-618). Gilt ebenso für den Hover der
+   Kennzahl oben. */
+.lfh-segmente {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--lfh-linie-stark);
+  border: 1px solid var(--lfh-linie-stark);
+}
+/* Rasterzelle eines Segments (LFH-865): trägt den Grund, das Segment rückt darin um den
+   Zielabstand ein (`Segmentleiste`, Dateikopf „Zielabstand“). */
+.lfh-segment-zelle {
+  background: var(--lfh-flaeche);
+}
+.lfh-segment {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--lfh-flaeche);
+  color: var(--lfh-gedaempft);
+  font-family: var(--lfh-schrift-text);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background var(--lfh-uebergang),
+    color var(--lfh-uebergang);
+}
+.lfh-segment:hover {
+  color: var(--lfh-text);
+}
+.lfh-segment--aktiv {
+  background: var(--lfh-flaeche-3);
+  color: var(--lfh-text);
+}
+/* Gesperrt: sichtbar, fokussierbar (den Grund nennt die Leiste), aber ohne Hover-Aufhellung.
+   Die Farbe ist nicht der einzige Kanal — `Segmentleiste` nennt den Grund. */
+.lfh-segment[aria-disabled='true'],
+.lfh-segment[aria-disabled='true']:hover {
+  color: var(--lfh-schwach);
+  cursor: not-allowed;
+}
+/* Nach innen versetzt: im Fugenraster läge ein äußerer Ring unter dem Nachbarsegment. */
+.lfh-segment:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--lfh-bedien);
+  outline-offset: -2px;
+}
+
+/* Schnellerfassungszeile: die ZEILE trägt Rahmen und Grund, das Feld darin nicht.
+   Drei Klassen tief, damit antds `:where()`-gekapselte Feldregeln (bis 0,2,0 samt
+   `:focus`) unterliegen, ohne `!important`.
+   Nur für das EINE Feld (ETB, Betroffene): mehrere Felder nebeneinander (Informationstelefon) behalten
+   ihren Steuerrahmen über das Opt-in `felderUmrandet` (LFH-978). Dort war das Select umrandet,
+   die Notiz nicht, und am Handy las sie sich wie eine Beschriftung. */
+.lfh-schnellerfassung
+  .lfh-schnellerfassung__feld:not(.lfh-schnellerfassung__feld--umrandet)
+  .ant-input,
+.lfh-schnellerfassung
+  .lfh-schnellerfassung__feld:not(.lfh-schnellerfassung__feld--umrandet)
+  .ant-input-affix-wrapper,
+.lfh-schnellerfassung
+  .lfh-schnellerfassung__feld:not(.lfh-schnellerfassung__feld--umrandet)
+  .ant-input:focus,
+.lfh-schnellerfassung
+  .lfh-schnellerfassung__feld:not(.lfh-schnellerfassung__feld--umrandet)
+  .ant-input-affix-wrapper:focus-within {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--lfh-text);
+  font-size: 14px;
+  /* Die Zeile behält die Zeilenhöhe der Stufe: antd rechnet die Polsterung aus `fontHeight`
+     (`controlHeight − fontHeight`), mit der 14-px-Zeile allein fehlten in `handschuh` 2 px am
+     Textfeld (70 statt 72, `e2e/trefflaeche-pruefflaechen.spec.ts` C7). */
+  line-height: var(--ant-font-height);
+}
+/* Gestapelt (LFH-373, opt-in): das Feld steht auf eigener Zeile und füllt sie. Ohne diese
+   Regel blieb das Kind (im ETB der `MarkdownEditor`) als Flex-Kind auf seiner Inhaltsbreite —
+   gemessen 176 von 364 px — und die volle Zeile hätte nichts gebracht. Nur im gestapelten
+   Fall: ungestapelt tragen Aufrufer mehrere Felder nebeneinander (Personenseite).
+   Ungestapelt streckt nur das Opt-in `feldFuellt` (LFH-955): das ETB maß ab `md` rund 160 px
+   Feld in einer 870 px breiten Zeile. */
+.lfh-schnellerfassung__feld--gestapelt > *,
+.lfh-schnellerfassung__feld--fuellt > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lfh-schnellerfassung:focus-within {
+  outline: 1px solid var(--lfh-bedien);
+  outline-offset: 0;
+}
+
+/* Katalogtabelle / Datensicht (`components/KatalogTabelle.tsx`). Farben, Trenner und
+   Zellpolster kommen als antd-Komponententokens (`tabellenTokens`); hier steht nur die
+   Kopfzeilen-TYPOGRAFIE und die Mono-Spalte. `.ant-table-wrapper.lfh-katalog` hebt die
+   Spezifität über antds (0,2,2) — die Regel hinge sonst an der Einfügereihenfolge. */
+.ant-table-wrapper.lfh-katalog .ant-table-thead > tr > th {
+  font-family: var(--lfh-schrift-text);
+  font-size: var(--lfh-typo-augenbraue-groesse);
+  font-weight: var(--lfh-typo-augenbraue-gewicht);
+  /* .12em statt der .14em der Augenbraue: so steht es im Tabellenkopf des Entwurfs
+     (S6/S7); die engere Sperrung spart in schmalen Spalten eine Zeile. */
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-bottom-color: var(--lfh-linie);
+}
+.ant-table-wrapper.lfh-katalog td.lfh-zahl-spalte {
+  font-family: var(--lfh-schrift-zahl);
+  font-variant-numeric: tabular-nums;
+}
+/* Freiraum unter der stehenden Kopfzeile (LFH-677, WCAG 2.4.11). Rückwärts getabbt rollt
+   der Browser das Fokusziel an den oberen Rand — ohne diesen Rand genau unter die Kopfzeile.
+   `scroll-margin` wirkt am Element, das in die Sicht gerollt wird, also am Ziel selbst:
+   deshalb `*`, nicht die Zeile. Die Höhe misst `KatalogTabelle` (`setzeKopfFreiraum`).
+   Den klebenden Rahmen darüber trägt `scroll-padding` am Dokument (`index.css`, LFH-952): beide
+   Abstände addieren sich, hier steht nur die Kopfzeile. */
+.ant-table-wrapper.lfh-katalog .ant-table-tbody * {
+  scroll-margin-top: var(--lfh-tabellenkopf-hoehe, 0px);
+}
+/* Freiraum neben der fixierten Kennung (LFH-967, WCAG 2.4.11): beim Zurücktabben richtet der
+   Browser das Ziel am linken Rand des Scrollports aus, also unter der Kennung. Kopf und Körper
+   scrollen getrennt (`sticky`), deshalb alle drei Container. Die Breite misst `KatalogTabelle`
+   (`setzeKopfFreiraum`). */
+.ant-table-wrapper.lfh-katalog .ant-table-header,
+.ant-table-wrapper.lfh-katalog .ant-table-body,
+.ant-table-wrapper.lfh-katalog .ant-table-content {
+  scroll-padding-inline-start: var(--lfh-tabellen-kennung-breite, 0px);
+}
+/* Abschneide-Indikator (LFH-980, Bedien-Leitlinie „Wenn Tabelle, dann vollständig“ Nr. 4):
+   kann die Tabelle waagerecht weiterlaufen, zeigt der Rand, auf dessen Seite Inhalt verborgen
+   liegt, eine Kante in `steuerRahmen` (≥ 3 : 1 auf jeder Fläche) plus Schatten. antd setzt die
+   Klassen selbst (`…-shadow-show`, an der fixierten Zelle bzw. ohne Fixierung am Container),
+   zeichnet aber in `colorSplit`, das nachts wie am Tag kaum vom Grund abweicht. */
+.ant-table-wrapper.lfh-katalog .ant-table-cell-fix-start-shadow-show::after,
+.ant-table-wrapper.lfh-katalog .ant-table-fix-start-shadow-show .ant-table-container::before {
+  box-shadow:
+    inset 2px 0 0 0 var(--lfh-steuer-rahmen),
+    inset 10px 0 8px -8px var(--lfh-steuer-rahmen);
+}
+.ant-table-wrapper.lfh-katalog .ant-table-cell-fix-end-shadow-show::after,
+.ant-table-wrapper.lfh-katalog .ant-table-fix-end-shadow-show .ant-table-container::after {
+  box-shadow:
+    inset -2px 0 0 0 var(--lfh-steuer-rahmen),
+    inset -10px 0 8px -8px var(--lfh-steuer-rahmen);
+}
+
+/* ── Zählzeile in einer Tabellenzelle (LFH-330 · B2) ───────────────────────
+   ADDITIV. Der Werteblock `.lfh-felder` oben ist ein vierspaltiges Raster mit
+   Rahmen — in einer Tabellenzelle ist das falsch. Hier zählt Kompaktheit:
+   dieselben `.lfh-feld` waagerecht, ohne Raster, ohne Fläche, eng gepolstert.
+   Die Stufenregeln (`--alarm`/`--achtung`) gelten unverändert weiter; der
+   zweite Kanal ist das `.lfh-etikett` IM Feld, nicht diese Klasse. */
+.lfh-ampel {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--lfh-luft-1);
+}
+
+.lfh-ampel .lfh-feld {
+  align-items: center;
+  gap: 0;
+  padding: 0 var(--lfh-luft-1);
+  background: none;
+}
+
+.lfh-ampel .lfh-zahl {
+  line-height: 1.15;
+}

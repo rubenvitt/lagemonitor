@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Übernommen aus Suchlage d621418 (27.10.2026): frontend/index.html (FOUC-Skripte) -->
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="theme-color" content="#0c0e11" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lagemonitor</title>
+    <script>
+      (function () {
+        try {
+          var m = localStorage.getItem('lagemonitor.theme');
+          if (m !== 'system' && m !== 'light' && m !== 'dark') m = 'dark';
+          var dunkel = m === 'dark' || (m === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          var t = dunkel ? 'dark' : 'light';
+          document.documentElement.dataset.theme = t;
+          document.documentElement.style.colorScheme = t;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.style.colorScheme = 'dark';
+        }
+      })();
+    </script>
+    <!-- Helligkeit synchron vor dem React-Mount setzen (aus Lifeline Hub, LFH-397), sonst blitzt
+         die abgedunkelte Oberfläche beim Laden auf voller Helligkeit auf. Gespiegelt aus
+         `theme/helligkeit.ts` + ThemeModeProvider. Eine Warnsperre kennt dieses Skript nicht —
+         die setzt der Provider nach dem Mount. -->
+    <script>
+      (function () {
+        try {
+          var stufen = ['100', '80', '60', '40', '20'];
+          var h = localStorage.getItem('lagemonitor.helligkeit');
+          if (stufen.indexOf(h) === -1) h = '100';
+          document.documentElement.dataset.helligkeit = h;
+          document.documentElement.style.setProperty(
+            '--lfh-abdunkelung',
+            String((100 - Number(h)) / 100),
+          );
+        } catch (e) {
+          /* localStorage gesperrt o. Ä. – keine Abdunklung, der Provider übernimmt. */
+        }
+      })();
+    </script>
+  </head>
+  <body style="margin: 0; background: #08090b">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

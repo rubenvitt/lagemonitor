@@ -1,0 +1,326 @@
+/* Übernommen aus Suchlage d621418 (27.10.2026): frontend/src/theme/rollen.css */
+/* Übernommen aus Lifeline Hub 3eb9115f2 (16.10.2026): frontend/src/theme/rollen.css (gekürzt: ohne Fachpaletten) */
+/* Gestaltungssprache „E · Lagekarte nachts" (LFH-352 · A0) — die Rollen als
+   statische CSS-Custom-Properties.
+   ============================================================================
+   WARUM STATISCH UND NICHT AUS DEM PROVIDER GESCHRIEBEN: `index.html` setzt
+   `data-theme` synchron vor dem React-Mount (FOUC-Schutz). Eine Property, die
+   erst ein `useEffect` an <html> hängt, existiert beim ersten Paint noch nicht —
+   jede Regel, die sie liest, fiele auf ihren Fallback zurück, und im Nachtbetrieb
+   wäre das ein weißer Blitz. Statisch unter `:root` / `[data-theme='dark']`
+   greifen sie mit dem ersten Frame.
+
+   ZWEI QUELLEN, EINE WAHRHEIT: dieselben Werte stehen typisiert in `tokens.ts`
+   (für antd) und hier (für handgeschriebenes CSS). Das ist bewusste Redundanz —
+   die zwei Quellen bleiben getrennt, damit handgeschriebenes CSS nicht an antds
+   Variablennamen hängt. Dass antd keine Variablen hätte, ist NICHT der Grund:
+   antd 6 emittiert `--ant-*` immer, auch ohne `cssVar` am ConfigProvider
+   (LFH-623, `test/antdCssVariablen.ts`). Im Browser (Chromium, Prod-Bundle, LFH-641,
+   01.10.2026) gilt: Die Variablen hängen an einer Klasse `css-var-<React-useId>`
+   (gemessen `css-var-_r_0_`; `css-var-root` heißt sie nur ohne `theme` am Provider,
+   wie im jsdom-Test). Die Klasse trägt `.ant-app`, das einzige Kind von `#root`,
+   dazu jede antd-Wurzel, auch Modal- und Dropdown-Portale. `var(--ant-…)` löst also
+   im ganzen App-Baum auf, aber NICHT an `<html>`, `<body>`, `#root` und nicht in
+   einem Portal ohne antd. Darauf baut keine Regel: der Name ist nicht stabil, jeder
+   ConfigProvider mit `theme` vergibt einen eigenen, und vor dem React-Mount gibt es
+   keinen. Und die meisten Rollen hier (Paneel, Kopf, Fläche 3, die deckenden
+   Statusflächen) kennt antd gar nicht. Gegen Drift schützt `rollen.guard.test.ts`: er parst
+   diese Datei und vergleicht sie Wert für Wert mit `tokens.ts`. Wer hier etwas
+   ändert und dort nicht, bricht den Test.
+
+   NEUENTWURF „INSTRUMENTENTAFEL" (21.09.2026): neue Farbrollen (Paneel, Kopf,
+   deckende Statusflächen, Banner, Zeilentönungen), ETB-Typfarben und
+   Warnstufen-Balken je Modus, der modusunabhängige Rahmen und die Schriftskala.
+   Messwerte und die zwei begründeten Abweichungen vom Entwurf stehen in `tokens.ts`.
+
+   ROT: `--lfh-marke` ist Marke, `--lfh-alarm` ist Gefahr — und `--lfh-bedien` ist
+   BLAU. Rot bedient nichts (LFH-315). Wer eine Bedienfläche rot einfärbt, bricht
+   die Sprache, nicht nur den Geschmack.
+   ========================================================================== */
+
+:root {
+  /* ── Farbrollen · Tagmodus ─────────────────────────────────────────────── */
+  --lfh-grund: #e9ebee;
+  --lfh-flaeche: #ffffff;
+  --lfh-flaeche-2: #f5f6f8;
+  --lfh-linie: #d4d8dd;
+  --lfh-linie-stark: #b9bfc6;
+  --lfh-raster-linie: rgba(26, 95, 160, 0.07);
+  --lfh-text: #111418;
+  --lfh-gedaempft: #363d45;
+  --lfh-schwach: #424a53;
+  --lfh-bedien: #154e84;
+  --lfh-alarm: #b02318;
+  --lfh-achtung: #7a5200;
+  --lfh-normal: #1c6640;
+  --lfh-marke: #a8071a;
+  --lfh-marke-glut: 0 0 10px 0 rgba(168, 7, 26, 0.3);
+  --lfh-alarm-fuellung: rgba(176, 35, 24, 0.07);
+  --lfh-alarm-fuellung-stark: rgba(176, 35, 24, 0.2);
+  --lfh-achtung-fuellung: rgba(122, 82, 0, 0.08);
+  --lfh-achtung-fuellung-stark: rgba(122, 82, 0, 0.2);
+  --lfh-normal-fuellung: rgba(28, 102, 64, 0.07);
+  /* Neuentwurf „Instrumententafel" (21.09.2026) — Rollen, Werte und Messwerte in tokens.ts. */
+  --lfh-kopf: #eef0f2;
+  --lfh-paneel: #f4f5f7;
+  --lfh-flaeche-3: #e1e4e8;
+  --lfh-text-2: #2b3138;
+  --lfh-steuer-rahmen: #79818a;
+  --lfh-bedien-hover: #185895;
+  --lfh-bedien-text: #144779;
+  --lfh-auf-bedien: #ffffff;
+  --lfh-normal-text: #155234;
+  --lfh-achtung-text: #604200;
+  --lfh-alarm-text: #8f1c12;
+  --lfh-alarm-hover: #7d1810;
+  --lfh-normal-flaeche: #e3f1e8;
+  --lfh-achtung-flaeche: #f7efd5;
+  --lfh-alarm-flaeche: #f9e3e3;
+  --lfh-bedien-flaeche: #e4edf7;
+  --lfh-auswahl-flaeche: #dbe7f5;
+  --lfh-banner-grund: #e6eef8;
+  --lfh-banner-linie: #9dbbe0;
+  --lfh-berichtigung-zeile: #fbeaea;
+  --lfh-luecke-zeile: #faf3da;
+  --lfh-problem-zeile: #f8eded;
+  --lfh-zeichen-platte: transparent;
+
+  /* ── Form ──────────────────────────────────────────────────────────────── */
+  --lfh-radius-flaeche: 0;
+  --lfh-radius-steuer: 0;
+  --lfh-radius-marke: 0;
+
+  /* ── Raster und Dichte (kompakt — die Stufe aus dem B-Entwurf) ─────────── */
+  /* Die beiden anderen Stufen stehen unten unter `[data-dichte='…']`. */
+  --lfh-luft-1: 3px;
+  --lfh-luft-2: 7px;
+  --lfh-luft-3: 11px;
+  --lfh-luft-4: 18px;
+  --lfh-zeilenhoehe: 30px;
+  --lfh-schriftgroesse: 13.5px;
+
+  /* ── Seitenrinne · Viewport-Achse (LFH-329 · B1) ───────────────────────── */
+  /* Mobil zuerst: hier steht der Ausgangswert für den schmalen Schirm, der
+     Media-Block am Dateiende hebt ihn ab antds md-Schwelle an. Eine andere
+     Achse als die Dichte — deshalb NICHT in den `data-dichte`-Blöcken unten. */
+  --lfh-seiten-polsterung: 12px;
+
+  /* ── Kopfzeile · Viewport-Achse (LFH-329 · B1) ─────────────────────────── */
+  /* Gleiche Richtung wie die Rinne darüber, aber EINE ANDERE SCHWELLE: die
+     Kopfzeile wird ab antds `lg` (992 px) voll, die Fläche schon ab `md`
+     (768 px). Das ist Absicht — der Kopf wird enger, bevor die Fläche es wird,
+     weil dort Umschalter und Einsatzname um dieselbe Zeile konkurrieren.
+     Ohne diese Property hinge der Kopf am antd-Komponententoken, und der frisst
+     bei der kompakten Steuerhöhe rund 47 px je Seite. */
+  --lfh-kopf-polsterung: 12px;
+
+  /* Vordergrund der Kopfzeile. STEHT BEWUSST NUR HIER und hat KEINEN Nachtmodus-
+     Gegenwert: die Kopfzeile trägt in beiden Modi denselben dunklen Grund
+     (gemessen `rgb(0, 21, 41)` hell wie dunkel), also braucht sie in beiden
+     denselben hellen Vordergrund. Wer hier einen `[data-theme='dark']`-Eintrag
+     ergänzt, dreht genau den Fehler wieder herein, den diese Rolle behebt:
+     ein Symbol, das der Textrolle des Modus folgt statt seinem eigenen Grund,
+     verschwindet im Hellmodus dunkel auf dunkel.
+     Seit dem Neuentwurf (21.09.2026) derselbe Wert wie `--lfh-rahmen-text`: der
+     Rahmen hat EINE Vordergrundfarbe, nicht zwei fast gleiche. */
+  --lfh-kopf-vordergrund: #e8ebee;
+
+  /* ── Rahmen · modusunabhängig (Neuentwurf, 21.09.2026) ─────────────────── */
+  /* Kommandoleiste und Rail bleiben in BEIDEN Modi dunkel („chrome stays
+     dark"). Dieselbe Regel wie beim Vordergrund darüber: KEIN Nachtmodus-
+     Gegenwert, und `rollen.guard.test.ts` prüft, dass keiner hineinrutscht.
+     TS-Seite: `rahmenFarben` in `tokens.ts` (zeigt auf `farbenDunkel`). */
+  --lfh-rahmen-grund: #0c0e11;
+  --lfh-rahmen-aktiv: #16191d;
+  --lfh-rahmen-feld: #14171b;
+  --lfh-rahmen-linie: #22262b;
+  --lfh-rahmen-text: #e8ebee;
+  --lfh-rahmen-gedaempft: #a0a8b1;
+  --lfh-rahmen-gesperrt: #838b94;
+  --lfh-rahmen-alarm: #ff7070;
+  --lfh-rahmen-marke: #a8071a;
+
+  /* ── Stimme und Bewegung ───────────────────────────────────────────────── */
+  --lfh-versal-sperrung: 2.2px;
+  --lfh-uebergang: 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ── Schriftrollen ─────────────────────────────────────────────────────── */
+  --lfh-schrift-text: 'LFH Archivo', system-ui, -apple-system, sans-serif;
+  --lfh-schrift-display: 'LFH Archivo Narrow', 'LFH Archivo', system-ui, sans-serif;
+  --lfh-schrift-zahl: 'LFH JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ── Schriftskala (Neuentwurf, 21.09.2026) ─────────────────────────────── */
+  /* TS-Seite: `schriftskala` in `tokens.ts`. Je Stufe Größe und Schnitt, dazu
+     die Sperrung, wo der Entwurf sie setzt. Die Familie steht hier nicht noch
+     einmal — sie ist `--lfh-schrift-text` bzw. `--lfh-schrift-zahl`.
+     Modus- und dichteunabhängig: die Grundschrift der Dichte-Achse ist
+     `--lfh-schriftgroesse`, diese Skala benennt die Stufen daneben. */
+  --lfh-typo-ueberschrift-groesse: 30px;
+  --lfh-typo-ueberschrift-gewicht: 600;
+  --lfh-typo-ueberschrift-sperrung: -0.02em;
+  --lfh-typo-seitentitel-groesse: 14px;
+  --lfh-typo-seitentitel-gewicht: 600;
+  --lfh-typo-text-groesse: 14px;
+  --lfh-typo-text-gewicht: 400;
+  --lfh-typo-text-klein-groesse: 12px;
+  --lfh-typo-text-klein-gewicht: 400;
+  --lfh-typo-augenbraue-groesse: 10px;
+  --lfh-typo-augenbraue-gewicht: 600;
+  --lfh-typo-augenbraue-sperrung: 0.14em;
+  --lfh-typo-rail-etikett-groesse: 9px;
+  --lfh-typo-rail-etikett-gewicht: 500;
+  --lfh-typo-rail-etikett-sperrung: 0.06em;
+  --lfh-typo-meta-groesse: 11px;
+  --lfh-typo-meta-gewicht: 400;
+  --lfh-typo-datenwert-klein-groesse: 22px;
+  --lfh-typo-datenwert-klein-gewicht: 500;
+  --lfh-typo-datenwert-klein-sperrung: -0.02em;
+  --lfh-typo-datenwert-groesse: 32px;
+  --lfh-typo-datenwert-gewicht: 500;
+  --lfh-typo-datenwert-sperrung: -0.02em;
+  --lfh-typo-datenwert-gross-groesse: 40px;
+  --lfh-typo-datenwert-gross-gewicht: 500;
+  --lfh-typo-datenwert-gross-sperrung: -0.02em;
+}
+
+[data-theme='dark'] {
+  /* ── Farbrollen · Nachtmodus ───────────────────────────────────────────── */
+  --lfh-grund: #08090b;
+  --lfh-flaeche: #0f1215;
+  --lfh-flaeche-2: #14171b;
+  --lfh-linie: #22262b;
+  --lfh-linie-stark: #2e343a;
+  --lfh-raster-linie: rgba(77, 148, 214, 0.055);
+  --lfh-text: #e8ebee;
+  --lfh-gedaempft: #9aa2ab;
+  --lfh-schwach: #838b94;
+  --lfh-bedien: #4d94d6;
+  --lfh-alarm: #ff6b6b;
+  --lfh-achtung: #e8cc3a;
+  --lfh-normal: #52c41a;
+  --lfh-marke: #a8071a;
+  --lfh-marke-glut: 0 0 12px 0 rgba(168, 7, 26, 0.55);
+  --lfh-alarm-fuellung: rgba(255, 107, 107, 0.1);
+  --lfh-alarm-fuellung-stark: rgba(255, 107, 107, 0.24);
+  --lfh-achtung-fuellung: rgba(232, 204, 58, 0.1);
+  --lfh-achtung-fuellung-stark: rgba(232, 204, 58, 0.24);
+  --lfh-normal-fuellung: rgba(82, 196, 26, 0.1);
+  /* Neuentwurf „Instrumententafel" (21.09.2026) — Rollen, Werte und Messwerte in tokens.ts. */
+  --lfh-kopf: #0c0e11;
+  --lfh-paneel: #0a0c0e;
+  --lfh-flaeche-3: #16191d;
+  --lfh-text-2: #c6ccd2;
+  --lfh-steuer-rahmen: #626a73;
+  --lfh-bedien-hover: #7db3e8;
+  --lfh-bedien-text: #8ec2f0;
+  --lfh-auf-bedien: #08090b;
+  --lfh-normal-text: #7ddc4a;
+  --lfh-achtung-text: #e8cc3a;
+  --lfh-alarm-text: #ff6b6b;
+  --lfh-alarm-hover: #e88a87;
+  --lfh-normal-flaeche: #0d1a0a;
+  --lfh-achtung-flaeche: #1c1705;
+  --lfh-alarm-flaeche: #1c0a0d;
+  --lfh-bedien-flaeche: #0d1620;
+  --lfh-auswahl-flaeche: #08172b;
+  --lfh-banner-grund: #0d1520;
+  --lfh-banner-linie: #1d3a5c;
+  --lfh-berichtigung-zeile: #160d0f;
+  --lfh-luecke-zeile: #161305;
+  --lfh-problem-zeile: #130f0f;
+  --lfh-zeichen-platte: #c9ced4;
+}
+
+/* ── Dichte-Staffel (A1 Festlegung 4 · LFH-328/A2) ─────────────────────────
+   Geschaltet wird von `theme/ThemeModeProvider.tsx`, und nur von dort: es setzt
+   das Merkmal am `<html>` (Benutzerwahl seit LFH-329/B1, Vorbelegung aus der
+   Zeigerart seit LFH-361/B5a). `rollen.guard.test.ts` erzwingt den einen Setzer.
+   Sie überschreiben ausschließlich die Dichte-Properties — Farbe, Form, Stimme
+   und Schrift sind dichteunabhängig; `rollen.guard.test.ts` prüft genau das als
+   Partition, damit hier nichts Fremdes einsickert.
+   Kein Einzug beim Selektor: der Guard sucht ihn am Zeilenanfang.
+   ======================================================================== */
+
+[data-dichte='komfortabel'] {
+  --lfh-luft-1: 5px;
+  --lfh-luft-2: 11px;
+  --lfh-luft-3: 18px;
+  --lfh-luft-4: 28px;
+  --lfh-zeilenhoehe: 48px;
+  --lfh-schriftgroesse: 15px;
+}
+
+[data-dichte='handschuh'] {
+  --lfh-luft-1: 7px;
+  --lfh-luft-2: 16px;
+  --lfh-luft-3: 26px;
+  --lfh-luft-4: 44px;
+  --lfh-zeilenhoehe: 72px;
+  --lfh-schriftgroesse: 15px;
+}
+
+/* ── Helligkeit · die Deckschicht (LFH-397) ───────────────────────────────
+   Der Helligkeitsregler dimmt über EINE schwarze Schicht über der ganzen Seite,
+   nicht über die Paletten: `farbenDunkel`/`farbenHell` und jedes Kontrast-Gate
+   bleiben unberührt. Die Deckkraft `--lfh-abdunkelung` (= 1 − Stufe) und die
+   WIRKSAME Stufe `data-helligkeit` setzt `ThemeModeProvider` — bei aktiver
+   Warnung mindestens der Boden (`theme/helligkeit.ts`). Vor dem Mount setzt sie
+   das Bootstrap-Skript in `index.html`, sonst blitzte der dunkle Fükw beim Laden
+   hell auf.
+
+   - kein `filter: brightness()` am <html>: der rechnete jedes Bild neu, die
+     Kartenleinwand bei jedem Frame; die Schicht wird nur zusammengesetzt.
+   - `pointer-events: none`: Klick und `elementFromPoint` gehen hindurch.
+   - `z-index` über jedem antd-Portal (Modal, Message, Dropdown) — auch
+     Überlagerungen werden abgedunkelt.
+   - nur `@media screen`: der Druck wird nie abgedunkelt.
+   Nachweis: `theme/helligkeit.test.ts` (Quelltext), `e2e/helligkeit.spec.ts`.
+   ======================================================================== */
+
+@media screen {
+  html[data-helligkeit]:not([data-helligkeit='100'])::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: #000;
+    opacity: var(--lfh-abdunkelung, 0);
+    pointer-events: none;
+    z-index: 2147483647;
+  }
+}
+
+/* ── Seitenrinne · die Viewport-Schwelle (LFH-329 · B1) ────────────────────
+   Ab antds `md` (768 px) trägt die Seite die volle Rinne — Fükw, ortsfeste
+   Stelle und Führungs-Tablet liegen alle darüber, der Handschirm darunter.
+   Dieselbe Schwelle, die auch jede JS-Achse liest; der Guard pinnt sie gegen
+   antds Design-Token, damit hier keine zweite Zahl entsteht.
+
+   ZWEI AUFLAGEN, BEIDE VOM GUARD ABGELEITET: der Block steht am DATEIENDE, und
+   sein innerer Selektor ist EINGERÜCKT. `rollen.guard.test.ts` sucht `:root`
+   am Zeilenanfang und nimmt den ersten Treffer — stünde dieser Block weiter
+   oben oder bündig, liefe die ganze Farb- und Rasterprüfung still gegen die
+   falschen Werte.
+   ======================================================================== */
+
+@media (min-width: 768px) {
+  :root {
+    --lfh-seiten-polsterung: 24px;
+  }
+}
+
+/* ── Kopfzeile · die zweite Viewport-Schwelle (LFH-329 · B1) ───────────────
+   Ab antds `lg` (992 px) trägt die Kopfzeile die volle Polsterung. Dieselbe
+   Schwelle, an der sie ihre Umschalter wieder aufnimmt und der
+   Navigationsrahmen aus dem Griff zurück in die Fläche wandert — eine Zahl für
+   den ganzen Kopf.
+
+   Die Auflagen von oben gelten unverändert: DATEIENDE und EINGERÜCKTER innerer
+   Selektor. `rollen.guard.test.ts` sucht `:root` am Zeilenanfang und nimmt den
+   ersten Treffer.
+   ======================================================================== */
+
+@media (min-width: 992px) {
+  :root {
+    --lfh-kopf-polsterung: 24px;
+  }
+}
