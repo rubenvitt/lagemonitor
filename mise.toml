@@ -1,0 +1,8 @@
+# Werkzeugversionen – die eine Quelle. Rust pinnt rust-toolchain.toml.
+[tools]
+node = "26.7.0"
+pnpm = "11.10.0"
+
+[tasks.check]
+description = "Qualitäts-Gate: Rust, Vertrag, Frontend"
+run = "scripts/check.sh"

@@ -1,6 +1,7 @@
 node_modules
 target/
-frontend/dist/
+frontend/dist/*
+!frontend/dist/.gitkeep
 frontend/test-results/
 frontend/playwright-report/
 *.local
