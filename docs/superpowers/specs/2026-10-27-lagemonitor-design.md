@@ -66,6 +66,8 @@ Monitor, Widgets, Konfiguration und Datenabruf laufen auf dem FüKw-Server. Ohne
 | Von außen über Tailscale oder Cloudflare Tunnel | nur mit Anmeldung | nur mit Anmeldung |
 
 - Ob ein Zugriff lokal ist, entscheidet der **Listener bzw. Port**, nicht die Quell-IP. Hinter cloudflared kommt jede Anfrage von `localhost`. Der Port ohne Anmeldung lauscht nur auf dem LAN-Interface und auf Loopback für den Kiosk. Tunnel und Tailnet zeigen ausschließlich auf den Port mit Anmeldung.
+- *Entscheidung Claude:* Der Port ohne Anmeldung bindet ausdrücklich an die LAN-Adresse, nie an `0.0.0.0` oder `::`. Zusätzlich blockt eine Host-Firewall eingehend alles auf den Uplink-Interfaces, auch IPv6, denn Sat und LTE können öffentliche v6-Adressen weiterreichen. Der Plan enthält dafür eine Prüfung von außen.
+- *Entscheidung Claude:* Den Monitor von außen sehen darf eine eigene OIDC-Gruppe (Name einstellbar). Admin ist eine zweite, engere Gruppe.
 - Admin funktioniert nur bei bestehender Internetverbindung. Das reicht, weil die Sitzung lang hält, Richtwert 14 Tage. Sie wird lokal geprüft und braucht Pocket ID nur beim Anmelden.
 
 ### 4.4 Admin-UI
@@ -74,6 +76,8 @@ Die Admin-UI ist **Teil des Lagemonitors**, nicht der iuk-suite. Dort gibt es nu
 ### 4.5 Relevanz statt Karussell
 Jedes Widget meldet selbst, ob es gerade etwas zu sagen hat, und mit welcher Dringlichkeit. Das Layout gibt dringlichen Widgets mehr Platz und lässt Widgets ohne Inhalt zurücktreten. Der Rahmen (Kopfzeile mit Uhr und Status, Fußzeile mit Datenstand) ist immer sichtbar. Die Admin-UI kann pinnen, ausblenden, sortieren und eine Ansicht erzwingen. Ruhe und Schaufenster sind die Zustände, wenn nichts anliegt.
 
+*Entscheidung Claude, nach dem Builder-Check:* **Amtliche Warnungen brechen immer durch.** Gilt eine Warnung oberhalb der Schwelle, erscheint das Warnband auch dann, wenn eine Ansicht erzwungen, das Schaufenster aktiv oder das Warnungs-Widget ausgeblendet ist. Pinnen, Ausblenden und Erzwingen wirken nur auf den Bereich unterhalb des Bands.
+
 ### 4.6 Datenquellen v1
 - **Warnungen:** NINA-API des BBK (`nina.api.bund.dev`), Abruf je Regionalschlüssel. Sie enthält DWD, MoWaS, KATWARN und Hochwasser. Warngebiete erscheinen als Fläche auf der Karte.
 - **Wetter:** DWD-Daten, z. B. über Bright Sky (kein Schlüssel nötig)
@@ -81,11 +85,17 @@ Jedes Widget meldet selbst, ob es gerade etwas zu sagen hat, und mit welcher Dri
 - **Karte:** offline über ein lokales Kartenpaket (PMTiles), MapLibre wie in Suchlage und Lifeline
 - Abrufe laufen über den Server, nicht direkt aus dem Browser. Der Server cached die Daten und liefert sie mit Zeitstempel aus.
 
+*Entscheidung Claude – Warnstufen und Schwelle:*
+- **Stufen** werden nicht über alle Quellen vereinheitlicht. Jede Warnung zeigt die Stufe ihrer Quelle als Wort, also DWD „Stufe 1–4“ und MoWaS/KATWARN „Gering … Extrem“. Die Farbe ergibt sich aus einer festen Zuordnung im Code.
+- Die **Warnschwelle** bestimmt nur, welche Warnungen das Band oben bekommen und nach vorn rücken. Warnungen unterhalb der Schwelle verschwinden nicht, sie stehen als Liste im Warnungs-Widget. Alle amtlichen Warnungen bleiben also sichtbar.
+
+*Entscheidung Claude – Standort außerhalb des Kartenpakets:* Wird ein Standort außerhalb des Kartenpakets eingestellt, zeigt die Kartenkachel einen ausdrücklichen Hinweis statt einer leeren Fläche. Wenn Internet da ist, nutzt sie Online-Kacheln als Rückfall.
+
 ### 4.7 Stack
 Wie Suchlage: Backend in **Rust**, Frontend in **React/Vite mit antd 6** und dem Lifeline-Designsystem, Daten in **SQLite**. Die Übernahme des Designsystems ist beschrieben in `suchlage/docs/reference/lifeline-vorlage.md`. Der Rahmen wird nach den Lifeline-Maßen neu gebaut, nicht kopiert. Der Monitor hat keine Rail und kein Modulpanel.
 
 ### 4.8 Gestaltung
-Die drei Zustände aus dem Brainstorming sind angenommen:
+Die drei Zustände aus dem Brainstorming sind angenommen. Die Entwürfe liegen verbindlich in `docs/design/2026-10-27-zustaende.html`, die Daten darin sind erfunden:
 - **Ruhe:** Karte groß mit Standort, rechts Wetter mit Kurzvorhersage
 - **Warnung aktiv:** Die Warnung erscheint als Band oben, mit Stufe als Wort und Zahl, Inhalt, Gültigkeit und Quelle. Auf der Karte liegen Warngebiet und Radar.
 - **Schaufenster:** Ruhe plus eine Kachel „Was ist das hier?“ mit QR-Code

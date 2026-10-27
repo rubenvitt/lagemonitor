@@ -1,0 +1,116 @@
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Archivo+Narrow:wght@600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  .lm{--grund:#08090b;--fl:#0f1215;--fl2:#14171b;--fl3:#16191d;--linie:#22262b;--text:#e8ebee;--ged:#9aa2ab;--bedien:#4d94d6;--marke:#a8071a;--alarm:#ff6b6b;--alarmF:rgba(255,107,107,.1);--alarmFS:rgba(255,107,107,.24);--acht:#e8cc3a;--achtF:rgba(232,204,58,.1);
+    font-family:Archivo,system-ui,sans-serif;color:var(--text);background:var(--linie);aspect-ratio:16/9;width:100%;display:grid;grid-template-rows:44px 1fr 26px;gap:1px;overflow:hidden;font-size:13px}
+  .lm .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+  .lm .kopf{background:#0c0e11;display:flex;align-items:center;gap:14px;padding-right:16px}
+  .lm .mk{width:44px;height:44px;background:var(--marke);display:grid;place-items:center;font-weight:600;font-family:'Archivo Narrow'}
+  .lm .wm{font-family:'JetBrains Mono';font-size:12px;letter-spacing:.06em}
+  .lm .dot{width:8px;height:8px;border-radius:50%;background:#52c41a;display:inline-block;margin-right:6px}
+  .lm .uhr{margin-left:auto;font-size:22px;font-weight:600}
+  .lm .brau{font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ged)}
+  .lm .p{background:var(--fl);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-height:0}
+  .lm .fuss{background:#0c0e11;display:flex;align-items:center;gap:18px;padding:0 14px;font-size:10px;color:var(--ged)}
+  .lm .big{font-size:44px;font-weight:600;line-height:1}
+  .lm .row{display:flex;justify-content:space-between;border-top:1px solid var(--linie);padding-top:5px}
+  .lm .karte{position:relative;padding:0;background:#0b1013;overflow:hidden}
+  .lm .karte svg{position:absolute;inset:0;width:100%;height:100%}
+  .lm .kl{position:absolute;left:10px;top:8px}
+  .lm .vh{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--linie);margin-top:auto}
+  .lm .vh div{background:var(--fl2);padding:6px;text-align:center}
+  .tag{display:inline-block;padding:2px 6px;font-size:10px;font-weight:600;letter-spacing:.1em}
+  .erkl{font-size:13px;color:#555;margin:6px 0 22px}
+</style>
+
+<h2>Lagemonitor – drei Zustände</h2>
+<p class="subtitle">Grobe Entwürfe im Lifeline-Design (Nacht, Radius 0, Haarlinien). Daten sind erfunden. Klick an, was dir am besten gefällt – Kommentare gern im Terminal.</p>
+
+<div class="options" data-multiselect>
+
+<div class="option" data-choice="ruhe" onclick="toggleSelect(this)">
+<div class="letter">A</div>
+<div class="content" style="width:100%">
+<h3>Ruhezustand – nichts liegt an</h3>
+<p class="erkl">Karte groß, Wetter rechts. Nichts blinkt, nichts fordert Aufmerksamkeit.</p>
+<div class="lm">
+  <div class="kopf"><div class="mk">+</div><span class="wm">LAGEMONITOR · FüKW 40-12-1</span><span class="mono" style="font-size:11px;color:var(--ged)"><span class="dot"></span>RUHE · keine Warnungen</span><span class="uhr mono">07:41:12</span></div>
+  <div style="display:grid;grid-template-columns:2.2fr 1fr;gap:1px;min-height:0">
+    <div class="p karte">
+      <svg viewBox="0 0 400 260" preserveAspectRatio="xMidYMid slice"><rect width="400" height="260" fill="#0b1013"/><path d="M0 180 Q120 140 200 150 T400 100" stroke="#1f2a33" stroke-width="6" fill="none"/><path d="M180 0 L210 260" stroke="#1c252d" stroke-width="4"/><path d="M0 60 Q150 90 400 40" stroke="#18212a" stroke-width="3" fill="none"/><path d="M60 260 Q90 200 140 190" stroke="#16384f" stroke-width="5" fill="none"/><circle cx="205" cy="148" r="7" fill="#4d94d6"/><circle cx="205" cy="148" r="16" fill="none" stroke="#4d94d6" stroke-opacity=".4"/></svg>
+      <div class="kl"><div class="brau">Standort</div><div class="mono" style="font-size:12px">Wache Uelzen · fest eingestellt</div></div>
+    </div>
+    <div class="p">
+      <div class="brau">Wetter · Uelzen</div>
+      <div style="display:flex;align-items:baseline;gap:10px"><span class="big mono">11°</span><span>bedeckt</span></div>
+      <div class="row"><span>Wind</span><span class="mono">SW 18 km/h · Böen 34</span></div>
+      <div class="row"><span>Niederschlag</span><span class="mono">0,2 mm/h</span></div>
+      <div class="row"><span>Sonnenuntergang</span><span class="mono">16:58</span></div>
+      <div class="vh mono"><div>09<br>11°</div><div>12<br>13°</div><div>15<br>12°</div><div>18<br>9°</div></div>
+    </div>
+  </div>
+  <div class="fuss mono"><span>DWD/NINA · Stand 07:40</span><span>Karte offline</span><span>lokal · ohne Anmeldung</span></div>
+</div>
+</div></div>
+
+<div class="option" data-choice="warnung" onclick="toggleSelect(this)">
+<div class="letter">B</div>
+<div class="content" style="width:100%">
+<h3>Unwetterwarnung aktiv</h3>
+<p class="erkl">Die Warnung rückt als Band nach oben, das Warngebiet liegt auf der Karte, der Regenradar ist an. Farbe trägt immer auch Wort und Stufe.</p>
+<div class="lm">
+  <div class="kopf"><div class="mk">+</div><span class="wm">LAGEMONITOR · FüKW 40-12-1</span><span class="mono" style="font-size:11px;color:var(--alarm)"><span class="dot" style="background:var(--alarm)"></span>1 WARNUNG · Stufe 3</span><span class="uhr mono">17:22:05</span></div>
+  <div style="display:grid;grid-template-rows:auto 1fr;gap:1px;min-height:0">
+    <div class="p" style="background:var(--alarmFS);flex-direction:row;align-items:center;gap:18px;padding:10px 14px">
+      <span class="tag" style="background:var(--alarm);color:#08090b">UNWETTER · STUFE 3</span>
+      <span style="font-size:20px;font-weight:600">Orkanartige Böen bis 110 km/h</span>
+      <span class="mono" style="margin-left:auto;color:var(--alarm)">bis 23:00 · DWD · LK Uelzen</span>
+    </div>
+    <div style="display:grid;grid-template-columns:2.2fr 1fr;gap:1px;min-height:0">
+      <div class="p karte">
+        <svg viewBox="0 0 400 220" preserveAspectRatio="xMidYMid slice"><rect width="400" height="220" fill="#0b1013"/><path d="M0 160 Q120 120 200 130 T400 80" stroke="#1f2a33" stroke-width="6" fill="none"/><path d="M180 0 L210 220" stroke="#1c252d" stroke-width="4"/><polygon points="40,20 330,10 380,150 250,210 60,190" fill="rgba(255,107,107,.12)" stroke="#ff6b6b" stroke-dasharray="6 4"/><ellipse cx="120" cy="90" rx="60" ry="30" fill="rgba(77,148,214,.35)"/><ellipse cx="150" cy="95" rx="25" ry="14" fill="rgba(232,204,58,.45)"/><circle cx="205" cy="128" r="7" fill="#4d94d6"/></svg>
+        <div class="kl"><div class="brau">Warngebiet + Radar</div><div class="mono" style="font-size:12px">Radar 17:20 · Zelle zieht nach NO</div></div>
+      </div>
+      <div class="p">
+        <div class="brau">Wetter · jetzt</div>
+        <div style="display:flex;align-items:baseline;gap:10px"><span class="big mono">14°</span><span>Sturm</span></div>
+        <div class="row"><span>Böen</span><span class="mono" style="color:var(--alarm)">97 km/h</span></div>
+        <div class="row"><span>Niederschlag</span><span class="mono">6,4 mm/h</span></div>
+        <div class="brau" style="margin-top:8px">Weitere Warnungen</div>
+        <div class="row" style="background:var(--achtF);padding:4px"><span>Gewitter</span><span class="mono" style="color:var(--acht)">Stufe 2</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="fuss mono"><span>DWD/NINA · Stand 17:21</span><span>Radar online</span><span>lokal · ohne Anmeldung</span></div>
+</div>
+</div></div>
+
+<div class="option" data-choice="schaufenster" onclick="toggleSelect(this)">
+<div class="letter">C</div>
+<div class="content" style="width:100%">
+<h3>Tag der offenen Tür</h3>
+<p class="erkl">Ruhezustand plus Schaufenster: eine kurze Erklärung, was hier läuft, und ein QR-Code zur Gruppe. Über die Admin-UI an- und abschaltbar.</p>
+<div class="lm">
+  <div class="kopf"><div class="mk">+</div><span class="wm">LAGEMONITOR · FüKW 40-12-1</span><span class="mono" style="font-size:11px;color:var(--bedien)"><span class="dot" style="background:var(--bedien)"></span>SCHAUFENSTER</span><span class="uhr mono">11:05:47</span></div>
+  <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:1px;min-height:0">
+    <div class="p karte">
+      <svg viewBox="0 0 300 260" preserveAspectRatio="xMidYMid slice"><rect width="300" height="260" fill="#0b1013"/><path d="M0 180 Q100 140 160 150 T300 100" stroke="#1f2a33" stroke-width="6" fill="none"/><path d="M140 0 L170 260" stroke="#1c252d" stroke-width="4"/><circle cx="160" cy="150" r="7" fill="#4d94d6"/></svg>
+      <div class="kl"><div class="brau">Wir stehen hier</div><div class="mono" style="font-size:12px">Marktplatz · fest eingestellt</div></div>
+    </div>
+    <div class="p">
+      <div class="brau">Wetter</div>
+      <div style="display:flex;align-items:baseline;gap:10px"><span class="big mono">16°</span><span>heiter</span></div>
+      <div class="row"><span>Wind</span><span class="mono">W 9 km/h</span></div>
+      <div class="vh mono"><div>12<br>17°</div><div>14<br>18°</div><div>16<br>17°</div><div>18<br>14°</div></div>
+    </div>
+    <div class="p">
+      <div class="brau">Was ist das hier?</div>
+      <div style="font-family:'Archivo Narrow';font-size:20px;font-weight:600;line-height:1.15">Information &amp; Kommunikation im Einsatz</div>
+      <div style="color:var(--ged);font-size:12px">Dieser Bildschirm zeigt im Einsatz Lage, Wetter und Drohnenbild – live aus dem Führungskraftwagen.</div>
+      <div style="margin-top:auto;display:flex;gap:10px;align-items:center"><div style="width:64px;height:64px;background:repeating-conic-gradient(#e8ebee 0 25%,#0f1215 0 50%) 0 0/16px 16px"></div><span style="font-size:12px">Mitmachen?<br><span class="mono" style="color:var(--bedien)">QR scannen</span></span></div>
+    </div>
+  </div>
+  <div class="fuss mono"><span>DWD/NINA · Stand 11:05</span><span>Demo-Modus aus Admin</span></div>
+</div>
+</div></div>
+
+</div>
