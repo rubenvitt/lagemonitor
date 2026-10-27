@@ -40,6 +40,11 @@ jobs:
   image:
     needs: check
     runs-on: ubuntu-latest
+    # Hintereinander, damit ein älterer Lauf `latest` nicht nach einem neueren
+    # überschreibt; deploy-compose zieht `latest`.
+    concurrency:
+      group: image-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -84,7 +89,7 @@ jobs:
 
     steps:
       - name: Mit Tailscale verbinden
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
@@ -103,7 +108,16 @@ jobs:
       - name: Lagemonitor deployen
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        # Der Runner ist im Tailnet evtl. noch nicht sichtbar, wenn die Action
+        # fertig ist: erst die Verbindung abwarten, dann deployen.
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            "gh-deploy@$DEPLOY_HOST" \
-            'sudo -n /usr/local/sbin/deploy-compose lagemonitor'
+          ssh_ziel() {
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
+              "gh-deploy@$DEPLOY_HOST" "$@"
+          }
+          for versuch in 1 2 3 4 5 6; do
+            ssh_ziel true && break
+            [ "$versuch" -eq 6 ] && exit 1
+            sleep 5
+          done
+          ssh_ziel 'sudo -n /usr/local/sbin/deploy-compose lagemonitor'
