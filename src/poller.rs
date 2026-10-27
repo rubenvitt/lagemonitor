@@ -7,14 +7,21 @@ use reqwest::Url;
 use serde::Serialize;
 
 use crate::app::AppState;
+use crate::app::SuchlageSnapshot;
 use crate::contract::{Location, Region, Warning};
-use crate::sources::{SourceError, nina, weather};
+use crate::sources::{SourceError, nina, suchlage, suite, weather};
 use crate::{settings, store};
 
 pub const NINA_BASE: &str = "https://warnung.bund.de/api31";
 pub const BRIGHT_SKY_BASE: &str = "https://api.brightsky.dev";
 pub const NINA_INTERVAL: Duration = Duration::from_secs(60);
 pub const WEATHER_INTERVAL: Duration = Duration::from_secs(600);
+pub const CONFIG_INTERVAL: Duration = Duration::from_secs(60);
+pub const SUCHLAGE_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Stand-Schlüssel der Konfiguration aus der Suite (nur Zeitpunkt, die Werte stehen in `settings`).
+pub const CONFIG_KEY: &str = "suite-config";
+pub const SUCHLAGE_KEY: &str = "suchlage";
 
 /// Schlüssel der Stände: Ort und Kreis gehören dazu, sonst stünde nach einer Änderung der
 /// Einstellungen der alte Stand unter dem neuen Namen.
@@ -104,7 +111,102 @@ pub async fn poll_weather(state: &AppState, http: &reqwest::Client, base: &Url) 
     run_once(state, &key, fetcher, now_ms).await;
 }
 
+/// Holt die Konfiguration aus der Suite und schreibt sie in `settings`. Scheitert der Abruf, gilt
+/// der letzte Stand weiter, und der Fehler steht unter `CONFIG_KEY`.
+pub async fn poll_config(state: &AppState) {
+    let Some(link) = state.boot.suite.clone() else {
+        return;
+    };
+    let http = state.http.clone();
+    let fetched = tokio::spawn(async move { suite::fetch(&http, &link).await }).await;
+    let outcome = match fetched {
+        Ok(Ok(cfg)) => match settings::save(&state.pool, &cfg).await {
+            Ok(()) => store::save(&state.pool, CONFIG_KEY, now_ms(), &())
+                .await
+                .map_err(|e| {
+                    tracing::warn!(error = ?e, "Stand der Konfiguration nicht gespeichert");
+                    "Speichern fehlgeschlagen".to_string()
+                }),
+            Err(e) => {
+                tracing::warn!(error = ?e, "Konfiguration nicht gespeichert");
+                Err("Speichern fehlgeschlagen".to_string())
+            }
+        },
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "Konfiguration nicht abgeholt");
+            Err(e.to_string())
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Abholen der Konfiguration abgestürzt");
+            Err("Abruf abgestürzt".to_string())
+        }
+    };
+    let mut errors = state.errors.write().await;
+    match outcome {
+        Ok(()) => errors.remove(CONFIG_KEY),
+        Err(m) => errors.insert(CONFIG_KEY.to_string(), m),
+    };
+}
+
+/// Fragt Suchlage, solange das Modul an und verbunden ist. Ein Fehler lässt den letzten Stand
+/// stehen; er veraltet dann sichtbar (`web::monitor`).
+pub async fn poll_suchlage(state: &AppState) {
+    let Some(cfg) = load_settings(state).await else {
+        return;
+    };
+    let link = match cfg.suchlage {
+        Some(link) if cfg.modules.suchlage => link,
+        _ => {
+            *state.suchlage.write().await = None;
+            state.errors.write().await.remove(SUCHLAGE_KEY);
+            return;
+        }
+    };
+    let (http, l) = (state.http.clone(), link.clone());
+    let outcome = match tokio::spawn(async move { suchlage::fetch(&http, &l).await }).await {
+        Ok(Ok(view)) => {
+            *state.suchlage.write().await = Some(SuchlageSnapshot {
+                url: link.url,
+                fetched_at_ms: now_ms(),
+                view,
+            });
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            tracing::debug!(error = %e, "Suchlage nicht abgefragt");
+            Err(e.to_string())
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Suchlage-Abfrage abgestürzt");
+            Err("Abruf abgestürzt".to_string())
+        }
+    };
+    let mut errors = state.errors.write().await;
+    match outcome {
+        Ok(()) => errors.remove(SUCHLAGE_KEY),
+        Err(m) => errors.insert(SUCHLAGE_KEY.to_string(), m),
+    };
+}
+
 pub fn spawn(state: AppState) {
+    let s = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(CONFIG_INTERVAL);
+        loop {
+            tick.tick().await;
+            poll_config(&s).await;
+        }
+    });
+    let s = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(SUCHLAGE_INTERVAL);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            poll_suchlage(&s).await;
+        }
+    });
+
     let http = reqwest::Client::new();
     let nina_base: Url = NINA_BASE.parse().expect("gültige Konstante");
     let weather_base: Url = BRIGHT_SKY_BASE.parse().expect("gültige Konstante");

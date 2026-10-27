@@ -8,7 +8,9 @@ Lagebild-Anzeige für den Server im Führungskraftwagen: Wetter, amtliche Warnun
 
 Die CI baut das Image `ghcr.io/rubenvitt/lagemonitor`. Der Server zieht es nur, er baut nichts. Schritt für Schritt: [`deploy/README.md`](deploy/README.md). Kiosk-Bildschirm: [`deploy/kiosk/README.md`](deploy/kiosk/README.md).
 
-Standort, Landkreis und Warnschwelle stehen in der Tabelle `settings` der SQLite-Datei `data/lagemonitor.db`. Bis es eine Verwaltung gibt, ändert man sie mit `sqlite3` (Beispiel in `deploy/README.md`, Schritt 9).
+Verwaltet wird der Monitor in der IUK-Suite (Modul „Lagemonitor“): Standort, Landkreis, Warnschwelle, Module und die Verbindung zu Suchlage. Der Server holt die Einstellungen jede Minute ab (`LAGEMONITOR_SUITE_URL`, `LAGEMONITOR_SUITE_TOKEN`) und hält den letzten Stand in der Tabelle `settings`, damit er ohne Internet weiterläuft (`deploy/README.md`, Schritt 9).
+
+Läuft in Suchlage ein Einsatz, zeigt die Karte seine Suchgebiete, die Flugspuren aller Flüge und die Drohnen; meldet Suchlage ein Livebild, fährt es von rechts ein. Der Server fragt Suchlage mit einem Großbild-Zugang (`/api/lagemonitor/v1`) und reicht das Video durch, der Kiosk-Browser sieht Suchlage nie.
 
 ## Entwicklung
 

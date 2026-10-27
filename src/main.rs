@@ -18,6 +18,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let boot = Arc::new(BootConfig::from_env()?);
     let pool = db::connect(&boot).await?;
     let state = AppState::new(pool, boot.clone()).await;
+    // Erst die Konfiguration, dann die Quellen: Der erste Wetterabruf soll schon den Ort der Suite
+    // kennen. Ohne Netz nicht lange warten, der letzte Stand liegt in `settings`.
+    let _ = tokio::time::timeout(CONFIG_AT_BOOT, poller::poll_config(&state)).await;
     poller::spawn(state.clone());
     let router = app::router(state);
 
@@ -43,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 const LAN_RETRY: Duration = Duration::from_secs(10);
+const CONFIG_AT_BOOT: Duration = Duration::from_secs(3);
 
 async fn bind_with_retry(addr: SocketAddr, every: Duration) -> TcpListener {
     loop {

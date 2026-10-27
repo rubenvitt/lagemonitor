@@ -4,10 +4,20 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+/// Abholung der Konfiguration aus der IUK-Suite (Modul „Lagemonitor“).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SuiteLink {
+    /// Wurzel des Moduls, z. B. `https://lagemonitor.iuk-ue.de`.
+    pub url: reqwest::Url,
+    pub token: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct BootConfig {
     pub data_dir: PathBuf,
     pub binds: Vec<SocketAddr>,
+    /// `None`: keine Suite, es gilt allein die lokale Tabelle `settings`.
+    pub suite: Option<SuiteLink>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -45,7 +55,15 @@ impl BootConfig {
                 Ok(addr)
             })
             .collect::<Result<Vec<SocketAddr>, _>>()?;
-        Ok(Self { data_dir, binds })
+        let suite = suite_link(
+            get("LAGEMONITOR_SUITE_URL").filter(|v| !v.trim().is_empty()),
+            get("LAGEMONITOR_SUITE_TOKEN").filter(|v| !v.trim().is_empty()),
+        )?;
+        Ok(Self {
+            data_dir,
+            binds,
+            suite,
+        })
     }
 
     pub fn db_path(&self) -> PathBuf {
@@ -55,6 +73,40 @@ impl BootConfig {
     pub fn tiles_path(&self) -> PathBuf {
         self.data_dir.join("karte.mbtiles")
     }
+}
+
+/// Beides oder nichts: Eine Adresse ohne Token (oder umgekehrt) ist ein Tippfehler, kein Wunsch.
+fn suite_link(url: Option<String>, token: Option<String>) -> Result<Option<SuiteLink>, BootError> {
+    let (url, token) = match (url, token) {
+        (None, None) => return Ok(None),
+        (Some(url), Some(token)) => (url, token),
+        (Some(_), None) => {
+            return Err(BootError {
+                var: "LAGEMONITOR_SUITE_TOKEN",
+                reason: "fehlt, LAGEMONITOR_SUITE_URL ist gesetzt".into(),
+            });
+        }
+        (None, Some(_)) => {
+            return Err(BootError {
+                var: "LAGEMONITOR_SUITE_URL",
+                reason: "fehlt, LAGEMONITOR_SUITE_TOKEN ist gesetzt".into(),
+            });
+        }
+    };
+    let url: reqwest::Url = url.trim().parse().map_err(|e| BootError {
+        var: "LAGEMONITOR_SUITE_URL",
+        reason: format!("{e}"),
+    })?;
+    if !matches!(url.scheme(), "https" | "http") {
+        return Err(BootError {
+            var: "LAGEMONITOR_SUITE_URL",
+            reason: "nur http oder https".into(),
+        });
+    }
+    Ok(Some(SuiteLink {
+        url,
+        token: token.trim().to_string(),
+    }))
 }
 
 #[cfg(test)]
@@ -88,6 +140,31 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.binds.len(), 2);
         assert_eq!(cfg.binds[1].to_string(), "192.168.10.5:8080");
+    }
+
+    #[test]
+    fn suite_needs_url_and_token() {
+        assert_eq!(BootConfig::from_lookup(lookup(&[])).unwrap().suite, None);
+        let cfg = BootConfig::from_lookup(lookup(&[
+            ("LAGEMONITOR_SUITE_URL", "https://lagemonitor.iuk-ue.de"),
+            ("LAGEMONITOR_SUITE_TOKEN", " abc "),
+        ]))
+        .unwrap();
+        let suite = cfg.suite.unwrap();
+        assert_eq!(suite.url.as_str(), "https://lagemonitor.iuk-ue.de/");
+        assert_eq!(suite.token, "abc");
+        let err = BootConfig::from_lookup(lookup(&[(
+            "LAGEMONITOR_SUITE_URL",
+            "https://lagemonitor.iuk-ue.de",
+        )]))
+        .unwrap_err();
+        assert_eq!(err.var, "LAGEMONITOR_SUITE_TOKEN");
+        let err = BootConfig::from_lookup(lookup(&[
+            ("LAGEMONITOR_SUITE_URL", "ftp://x"),
+            ("LAGEMONITOR_SUITE_TOKEN", "abc"),
+        ]))
+        .unwrap_err();
+        assert_eq!(err.var, "LAGEMONITOR_SUITE_URL");
     }
 
     #[test]

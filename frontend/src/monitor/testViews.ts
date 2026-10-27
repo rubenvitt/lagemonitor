@@ -1,5 +1,6 @@
 // Testdaten für die Monitor-Ansicht. Erfundene Werte, keine Einsatzdaten.
 import type { MonitorView } from '../contract/MonitorView';
+import type { SuchlageView } from '../contract/SuchlageView';
 import type { Warning } from '../contract/Warning';
 
 export const NOW = Date.parse('2026-10-27T12:00:00Z');
@@ -50,6 +51,45 @@ export function makeView(over: Partial<MonitorView> = {}): MonitorView {
     },
     warnings: { data: [], fetchedAtMs: NOW, stale: false, error: null },
     map: { offline: false },
+    modules: { weather: true, radar: true, warningAreas: true, warningList: true, suchlage: false },
+    config: { fromSuite: false, fetchedAtMs: null, error: null },
+    suchlage: null,
+    ...over,
+  };
+}
+
+/** Laufender Suchlage-Einsatz: ein Suchgebiet, zwei Flüge (einer läuft), eine Drohne mit Livebild. */
+export function makeSuchlage(over: Partial<SuchlageView> = {}): SuchlageView {
+  const line = (id: number, running: boolean, coords: number[][]) => ({
+    type: 'Feature',
+    properties: { flightId: id, running },
+    geometry: { type: 'MultiLineString', coordinates: [coords] },
+  });
+  return {
+    mission: { name: 'Vermisste Person Oldenstadt', location: 'Oldenstadt', section: 'Abschnitt Nord', startedAtMs: NOW - HOUR },
+    areas: {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          // Datenwert aus Suchlage (Farbe des Kartenelements), keine Gestaltung.
+          // eslint-disable-next-line no-restricted-syntax
+          properties: { name: 'Suchgebiet A', color: '#2D6CDF' },
+          geometry: { type: 'Polygon', coordinates: [[[10.55, 52.97], [10.58, 52.97], [10.58, 52.985], [10.55, 52.985], [10.55, 52.97]]] },
+        },
+      ],
+    },
+    tracks: {
+      type: 'FeatureCollection',
+      features: [
+        line(9, true, [[10.556, 52.972], [10.562, 52.976]]),
+        line(7, false, [[10.552, 52.971], [10.575, 52.983]]),
+      ],
+    },
+    aircraft: [
+      { gatewaySn: 'RC1', label: 'Drohne 1', lat: 52.976, lon: 10.562, headingDeg: 90, elevationM: 60, batteryPercent: 71, airborne: true },
+    ],
+    video: { gatewaySn: 'RC1', label: 'Drohne 1' },
     ...over,
   };
 }

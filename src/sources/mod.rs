@@ -5,6 +5,8 @@ use std::time::Duration;
 use reqwest::Url;
 
 pub mod nina;
+pub mod suchlage;
+pub mod suite;
 pub mod weather;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,8 +20,20 @@ pub enum SourceError {
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) async fn get_bytes(http: &reqwest::Client, url: Url) -> Result<Vec<u8>, SourceError> {
-    let res = http
-        .get(url.clone())
+    get_bytes_as(http, url, None).await
+}
+
+/// Wie `get_bytes`, mit `Authorization: Bearer …`. Der Token steht nie in einer Fehlermeldung.
+pub(crate) async fn get_bytes_as(
+    http: &reqwest::Client,
+    url: Url,
+    bearer: Option<&str>,
+) -> Result<Vec<u8>, SourceError> {
+    let mut req = http.get(url.clone());
+    if let Some(token) = bearer {
+        req = req.bearer_auth(token);
+    }
+    let res = req
         .timeout(TIMEOUT)
         .send()
         .await

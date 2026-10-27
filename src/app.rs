@@ -26,6 +26,18 @@ pub struct AppState {
     pub errors: Arc<RwLock<HashMap<String, String>>>,
     /// Nur gesetzt, wenn `karte.mbtiles` beim Start vorhanden und lesbar war.
     pub tiles: Option<SqlitePool>,
+    /// Letzter Suchlage-Stand. Nur im Speicher: Er altert in Sekunden, nach einem Neustart zählt er nicht.
+    pub suchlage: Arc<RwLock<Option<SuchlageSnapshot>>>,
+    /// Für Suite, Suchlage und den Video-Proxy.
+    pub http: reqwest::Client,
+}
+
+#[derive(Debug, Clone)]
+pub struct SuchlageSnapshot {
+    /// Adresse, von der der Stand kam; nach einem Wechsel gilt er nicht mehr.
+    pub url: String,
+    pub fetched_at_ms: i64,
+    pub view: crate::contract::SuchlageView,
 }
 
 impl AppState {
@@ -48,6 +60,8 @@ impl AppState {
             boot,
             errors: Arc::default(),
             tiles,
+            suchlage: Arc::default(),
+            http: reqwest::Client::new(),
         }
     }
 }
@@ -70,6 +84,14 @@ pub fn router(state: AppState) -> Router {
         .route("/api/health", get(health))
         .route("/api/monitor", get(web::monitor::get))
         .route("/api/tiles/{z}/{x}/{y}", get(web::tiles::get))
+        .route(
+            "/api/suchlage/video/{gateway_sn}/whep",
+            axum::routing::post(web::video::whep),
+        )
+        .route(
+            "/api/suchlage/video/{gateway_sn}/hls/{*file}",
+            get(web::video::hls),
+        )
         .fallback(fallback)
         .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
@@ -328,6 +350,113 @@ mod tests {
             .oneshot(
                 Request::get("/api/tiles/1/0/1")
                     .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Suite und Suchlage als ein Doppel: `/api/konfiguration` mit Token `suite`, `/api/lagemonitor/v1/lage`
+    /// mit Token `geheim`. Die Suchlage-Adresse der Konfiguration zeigt auf dasselbe Doppel.
+    async fn fake_suite_and_suchlage() -> reqwest::Url {
+        use axum::http::HeaderMap;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let config = crate::sources::suite::tests::EXAMPLE
+            .replace("http://127.0.0.1:8090", &base)
+            .replace("\"video\": false", "\"video\": true");
+        let auth = |h: &HeaderMap, want: &str| {
+            h.get("authorization").and_then(|v| v.to_str().ok()) == Some(&format!("Bearer {want}"))
+        };
+        let app = Router::new()
+            .route(
+                "/api/konfiguration",
+                get(move |h: HeaderMap| async move {
+                    if auth(&h, "suite") {
+                        (StatusCode::OK, config).into_response()
+                    } else {
+                        StatusCode::UNAUTHORIZED.into_response()
+                    }
+                }),
+            )
+            .route(
+                "/api/lagemonitor/v1/lage",
+                get(move |h: HeaderMap| async move {
+                    if auth(&h, "geheim") {
+                        (StatusCode::OK, crate::sources::suchlage::tests::RUNNING).into_response()
+                    } else {
+                        StatusCode::UNAUTHORIZED.into_response()
+                    }
+                }),
+            );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        base.parse().unwrap()
+    }
+
+    async fn suite_state(url: reqwest::Url, token: &str) -> AppState {
+        let mut boot = BootConfig::from_lookup(|_| None).unwrap();
+        boot.suite = Some(crate::config::SuiteLink {
+            url,
+            token: token.into(),
+        });
+        AppState::new(crate::db::test_pool().await, Arc::new(boot)).await
+    }
+
+    #[tokio::test]
+    async fn config_from_the_suite_drives_the_monitor_and_suchlage() {
+        let base = fake_suite_and_suchlage().await;
+        let state = suite_state(base, "suite").await;
+        crate::poller::poll_config(&state).await;
+        crate::poller::poll_suchlage(&state).await;
+        let res = router(state)
+            .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let json = json_of(res).await;
+        assert_eq!(json["warnThreshold"], "Moderate");
+        assert_eq!(json["modules"]["radar"], false);
+        assert_eq!(json["config"]["fromSuite"], true);
+        assert!(json["config"]["fetchedAtMs"].is_number(), "{json}");
+        let suchlage = &json["suchlage"];
+        assert_eq!(suchlage["stale"], false, "{json}");
+        assert_eq!(
+            suchlage["data"]["mission"]["name"],
+            "Vermisste Person Oldenstadt"
+        );
+        assert_eq!(suchlage["data"]["video"]["gatewaySn"], "RC1");
+        assert!(
+            !json.to_string().contains("geheim"),
+            "Der Token bleibt auf dem Server"
+        );
+    }
+
+    #[tokio::test]
+    async fn refused_suite_keeps_the_local_settings_and_says_so() {
+        let base = fake_suite_and_suchlage().await;
+        let state = suite_state(base, "falsch").await;
+        crate::poller::poll_config(&state).await;
+        let json = json_of(
+            router(state)
+                .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(json["warnThreshold"], "Severe");
+        assert!(json["config"]["error"].is_string(), "{json}");
+        assert!(
+            json["suchlage"].is_null(),
+            "Modul aus, solange nichts konfiguriert ist"
+        );
+    }
+
+    #[tokio::test]
+    async fn video_without_link_is_404() {
+        let res = router(test_state(None).await)
+            .oneshot(
+                Request::post("/api/suchlage/video/RC1/whep")
+                    .body(Body::from("v=0"))
                     .unwrap(),
             )
             .await

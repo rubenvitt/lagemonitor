@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMonitor } from '../api';
 import { useThemeMode, useWarnsperre } from '../theme/ThemeModeProvider';
+import DronePanel from './DronePanel';
 import Footer from './Footer';
 import Header from './Header';
 import MapPanel from './MapPanel';
@@ -49,23 +50,35 @@ export default function MonitorPage() {
     );
   }
 
-  const { weather, location } = view;
+  const { weather, location, modules } = view;
+  // Ein Suchlage-Stand ohne Einsatz oder lange ohne Antwort zeigt nichts: Alte Spuren und ein
+  // eingefrorenes Bild wären schlimmer als keine. Das Band oben bleibt davon unberührt.
+  const einsatz = view.suchlage?.data?.mission ? view.suchlage.data : null;
+  const listed = modules.warningList ? layout.listed : [];
+  const sideColumn = modules.weather || listed.length > 0;
+  const video = einsatz && !view.suchlage?.stale ? einsatz.video : null;
   return (
     <div className="lm">
       <Header view={view} layout={layout} nowMs={clockNow} />
       <div className="lm-rumpf">
         {layout.mode === 'warnung' && <WarningBand band={layout.band} />}
-        <div className="lm-spalten">
+        <div className="lm-spalten" data-seitenspalte={sideColumn}>
           <MapPanel
             lat={location.lat}
             lon={location.lon}
             label={location.label}
             offline={view.map.offline}
-            band={layout.band}
-            listed={layout.listed}
-            radarAt={radarAt(weather, nowMs)}
+            band={modules.warningAreas ? layout.band : []}
+            listed={modules.warningAreas ? layout.listed : []}
+            radarAt={modules.radar ? radarAt(weather, nowMs) : null}
+            suchlage={einsatz}
+            droneOpen={video !== null}
+            sideColumn={sideColumn}
           />
-          <WeatherPanel weather={weather} label={location.label} listed={layout.listed} />
+          {sideColumn && (
+            <WeatherPanel weather={modules.weather ? weather : null} label={location.label} listed={listed} />
+          )}
+          {modules.suchlage && <DronePanel video={video} aircraft={einsatz?.aircraft ?? []} />}
         </div>
       </div>
       <Footer view={view} />

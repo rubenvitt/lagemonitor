@@ -277,9 +277,26 @@ Die Ausgabe ist `"map":{"offline":true}`. Steht dort `false`, ist die Datei nich
 
 ---
 
-## 9. Einstellungen ändern (Standort, Landkreis, Warnschwelle)
+## 9. Einstellungen ändern (Standort, Landkreis, Warnschwelle, Module, Suchlage)
 
-Eine Verwaltungsseite gibt es noch nicht. Bis dahin änderst du die Werte direkt in der Datenbank.
+Verwaltet wird der Lagemonitor in der **IUK-Suite** unter *Lagemonitor* (Gruppe `lagemonitor-admin`). Dort stellst du Standort, Landkreis, Warnschwelle, die Module (Wetter, Radar, Warngebiete, Warnliste, Suchlage) und die Verbindung zu Suchlage ein und siehst daneben eine Vorschau mit Beispieldaten. Der Lagemonitor holt die Einstellungen jede Minute ab und merkt sich den letzten Stand: Ohne Internet läuft er mit diesem Stand weiter, der Fuß zeigt dann „Konfiguration aus IUK-Suite nicht abholbar“.
+
+1. In der IUK-Suite unter *Lagemonitor → Zugang* einen Zugang erzeugen. Den Schlüssel zeigt sie nur einmal.
+2. Auf dem Server Adresse und Schlüssel in die `.env` schreiben (Adresse ohne Pfad):
+
+   ```bash
+   echo 'LAGEMONITOR_SUITE_URL=https://lagemonitor.iuk-ue.de' | sudo tee -a /opt/lagemonitor/.env
+   echo 'LAGEMONITOR_SUITE_TOKEN=<Schlüssel aus der Suite>' | sudo tee -a /opt/lagemonitor/.env
+   cd /opt/lagemonitor && docker compose up -d
+   ```
+
+3. **So prüfst du es:** Nach spätestens einer Minute steht in der Suite beim Zugang „zuletzt abgeholt“ mit Uhrzeit, und `curl -s 127.0.0.1:8080/api/monitor | grep -o '"config":{[^}]*}'` zeigt `"fromSuite":true` und `"error":null`.
+
+Was in der Suite steht, überschreibt die lokalen Werte bei jeder Abholung. Ohne die beiden Zeilen gilt allein die Datenbank.
+
+### Ohne IUK-Suite: direkt in der Datenbank
+
+Ohne `LAGEMONITOR_SUITE_URL` änderst du die Werte direkt in der Datenbank.
 
 **Zuerst:** Der Lagemonitor muss mindestens einmal gelaufen sein (Schritt 5), denn er legt die Datenbank selbst an. Legt `sudo sqlite3` sie zuerst an, gehört sie dem Benutzer `root` und der Lagemonitor kann sie nicht öffnen. Reparieren: `sudo chown 65532:65532 /opt/lagemonitor/data/lagemonitor.db*`, dann `docker compose restart`.
 

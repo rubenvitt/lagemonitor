@@ -1,16 +1,31 @@
 //! Fachliche Einstellungen aus der Tabelle `settings` (Wert je Schlüssel als JSON).
 
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::contract::{Location, Region, Severity};
+use crate::contract::{Location, Modules, Region, Severity};
 use crate::error::AppError;
+
+/// Verbindung zu Suchlage: Adresse und Großbild-Token, dazu, was vom Einsatz erscheint.
+/// Bleibt auf dem Server; der Browser sieht den Token nie.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuchlageLink {
+    pub url: String,
+    pub token: String,
+    pub tracks: bool,
+    pub areas: bool,
+    pub video: bool,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub location: Location,
     pub region: Region,
     pub warn_threshold: Severity,
+    pub modules: Modules,
+    pub suchlage: Option<SuchlageLink>,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -27,7 +42,37 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
         warn_threshold: get(pool, "warn_threshold")
             .await?
             .unwrap_or(Severity::Severe),
+        modules: get(pool, "modules").await?.unwrap_or_default(),
+        suchlage: get(pool, "suchlage").await?.flatten(),
     })
+}
+
+/// Schreibt alle Einstellungen in einem Zug; ein Leser sieht nie eine halbe Konfiguration.
+pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
+    let rows = [
+        ("location", to_json(&s.location)?),
+        ("region", to_json(&s.region)?),
+        ("warn_threshold", to_json(&s.warn_threshold)?),
+        ("modules", to_json(&s.modules)?),
+        ("suchlage", to_json(&s.suchlage)?),
+    ];
+    let mut tx = pool.begin().await?;
+    for (key, value) in rows {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES (?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+fn to_json(value: &impl Serialize) -> Result<String, AppError> {
+    serde_json::to_string(value).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 async fn get<T: DeserializeOwned>(
@@ -58,6 +103,28 @@ mod tests {
         assert_eq!(s.location.label, "Uelzen");
         assert_eq!(s.region.ars, "033600000000");
         assert_eq!(s.warn_threshold, Severity::Severe);
+        assert_eq!(s.modules, Modules::default());
+        assert_eq!(s.suchlage, None);
+    }
+
+    #[tokio::test]
+    async fn save_and_load_roundtrip() {
+        let pool = crate::db::test_pool().await;
+        let mut s = load(&pool).await.unwrap();
+        s.modules.radar = false;
+        s.suchlage = Some(SuchlageLink {
+            url: "http://127.0.0.1:8090".into(),
+            token: "geheim".into(),
+            tracks: true,
+            areas: false,
+            video: true,
+        });
+        s.warn_threshold = Severity::Minor;
+        save(&pool, &s).await.unwrap();
+        assert_eq!(load(&pool).await.unwrap(), s);
+        s.suchlage = None;
+        save(&pool, &s).await.unwrap();
+        assert_eq!(load(&pool).await.unwrap().suchlage, None);
     }
 
     #[tokio::test]
