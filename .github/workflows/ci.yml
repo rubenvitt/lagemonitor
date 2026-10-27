@@ -6,9 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Läufe je Ref ganz hintereinander: Sonst kann ein älterer Lauf `latest` nach
-# einem neueren schieben, und deploy-compose zieht `latest`. PR-Läufe dürfen
-# sich gegenseitig abbrechen.
+# Läufe je Ref ganz hintereinander, damit ein älterer Lauf nicht nach einem neueren
+# deployt. PR-Läufe dürfen sich gegenseitig abbrechen.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -47,6 +46,8 @@ jobs:
   image:
     needs: check
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     permissions:
       contents: read
       packages: write
@@ -68,7 +69,8 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: deploy/Dockerfile
@@ -79,16 +81,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Server-Seite und Einrichtung: rubenvitt/fuekw-deploy
   deploy:
     needs: image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions: {}
-
+    environment: production
     concurrency:
       group: deploy-lagemonitor-production
       cancel-in-progress: false
-
     steps:
       - name: Mit Tailscale verbinden
         uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
@@ -96,30 +98,19 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-
-      - name: SSH konfigurieren
-        env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ping: ${{ secrets.DEPLOY_HOST }}
 
       - name: Lagemonitor deployen
         env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        # Der Runner ist im Tailnet evtl. noch nicht sichtbar, wenn die Action
-        # fertig ist: erst die Verbindung abwarten, dann deployen.
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.image.outputs.digest }}
         run: |
-          ssh_ziel() {
-            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
-              "gh-deploy@$DEPLOY_HOST" "$@"
-          }
-          for versuch in 1 2 3 4 5 6; do
-            ssh_ziel true && break
-            [ "$versuch" -eq 6 ] && exit 1
-            sleep 5
-          done
-          ssh_ziel 'sudo -n /usr/local/sbin/deploy-compose lagemonitor'
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key
+          # Der Forced Command auf dem Server legt das Projekt fest; übergeben wird nur das Image.
+          ssh -i ~/.ssh/deploy_key -p 2222 -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes "gh-deploy@$DEPLOY_HOST" "$IMAGE"
