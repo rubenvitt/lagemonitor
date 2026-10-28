@@ -63,8 +63,12 @@ export async function aufStandWechseln(ziel: string, u: Umgebung = browser()): P
     if (!seite.ok) return false;
     const html = await seite.text();
     if (!html.includes(`content="${ziel}"`)) return false;
+    // Fehlt ein Bundle, bliebe die neue Seite leer: dann lieber bei der nächsten Abfrage erneut.
     await Promise.all(
-      bundles(html).map((pfad) => u.holen(new URL(pfad, u.seite)).catch(() => undefined)),
+      bundles(html).map(async (pfad) => {
+        const bundle = await u.holen(new URL(pfad, u.seite));
+        if (!bundle.ok) throw new Error(`Bundle fehlt: ${pfad}`);
+      }),
     );
     sicherSchreiben(SPERRE_SCHLUESSEL, `${ziel}|${u.jetzt()}`);
     u.neuLaden();

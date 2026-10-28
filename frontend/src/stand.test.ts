@@ -14,7 +14,7 @@ const HTML = `<!doctype html><html><head><meta name="lagemonitor-stand" content=
 <script type="module" crossorigin src="./assets/index-Ab1.js"></script>
 <link rel="stylesheet" crossorigin href="./assets/index-Cd2.css"></head><body></body></html>`;
 
-function umgebung(antwort: Response | Error, jetzt = 1_000_000): Umgebung & { geholt: string[]; neu: number } {
+function umgebung(antwort: Response | Error, jetzt = 1_000_000, bundle = () => new Response('')): Umgebung & { geholt: string[]; neu: number } {
   const u = {
     geholt: [] as string[],
     neu: 0,
@@ -25,7 +25,7 @@ function umgebung(antwort: Response | Error, jetzt = 1_000_000): Umgebung & { ge
     },
     holen: (async (eingabe: RequestInfo | URL) => {
       u.geholt.push(String(eingabe));
-      if (String(eingabe) !== SEITE) return new Response('');
+      if (String(eingabe) !== SEITE) return bundle();
       if (antwort instanceof Error) throw antwort;
       return antwort.clone();
     }) as typeof fetch,
@@ -83,6 +83,14 @@ test('liefert der Server die neue Seite (noch) nicht, bleibt die alte stehen', a
     new Error('offline'),
   ]) {
     const u = umgebung(antwort);
+    expect(await aufStandWechseln(NEU, u)).toBe(false);
+    expect(u.neu).toBe(0);
+  }
+});
+
+test('fehlt ein Bundle der neuen Seite, bleibt die alte stehen', async () => {
+  for (const bundle of [() => new Response('', { status: 404 }), () => { throw new Error('offline'); }]) {
+    const u = umgebung(new Response(HTML), 1_000_000, bundle);
     expect(await aufStandWechseln(NEU, u)).toBe(false);
     expect(u.neu).toBe(0);
   }
