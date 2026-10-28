@@ -23,3 +23,13 @@ test('frischer Stand ohne Kartenquelle', () => {
   expect(screen.queryByText(/^Karte /)).toBeNull();
   expect(screen.queryByText(/Veraltet/)).toBeNull();
 });
+
+test('Verkehr steht nur da, wenn eine Ebene an ist, und ein Fehler fällt auf', () => {
+  const { rerender } = render(<Footer view={makeView()} />);
+  expect(screen.queryByText(/Verkehr/)).toBeNull();
+  const incidents = { data: [], fetchedAtMs: NOW, stale: false, error: null };
+  rerender(<Footer view={makeView({ traffic: { flow: true, flowError: null, incidents, speedCameras: null } })} />);
+  expect(screen.getByText(/^Verkehr TomTom · Stand \d\d:\d\d$/)).toBeInTheDocument();
+  rerender(<Footer view={makeView({ traffic: { flow: true, flowError: 'Verkehrsfluss nicht abrufbar', incidents, speedCameras: null } })} />);
+  expect(screen.getByText('Verkehr: TomTom nicht abrufbar')).toHaveClass('lm-fuss-alarm');
+});

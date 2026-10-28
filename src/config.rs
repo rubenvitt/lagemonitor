@@ -131,6 +131,11 @@ impl BootConfig {
         })
     }
 
+    /// Die Online-Instanz: nur Listener mit Anmeldung, kein Kiosk. Nur sie zeigt Blitzer.
+    pub fn online(&self) -> bool {
+        self.binds.is_empty() && !self.auth_binds.is_empty()
+    }
+
     pub fn db_path(&self) -> PathBuf {
         self.data_dir.join("lagemonitor.db")
     }

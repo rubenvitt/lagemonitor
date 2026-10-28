@@ -29,6 +29,24 @@ pub struct PublicLink {
     pub hash: String,
 }
 
+/// Verkehrslage: welche Ebenen an sind, dazu der TomTom-Schlüssel. Der Schlüssel bleibt auf dem
+/// Server; Kacheln und Störungen holt der Server (`web::traffic`, `poller::poll_traffic`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrafficLink {
+    pub tomtom_key: Option<String>,
+    pub flow: bool,
+    pub incidents: bool,
+    pub speed_cameras: bool,
+}
+
+impl TrafficLink {
+    /// Der Schlüssel, wenn eine TomTom-Ebene ihn braucht und er da ist.
+    pub fn key_for(&self, layer_on: bool) -> Option<&str> {
+        self.tomtom_key.as_deref().filter(|_| layer_on)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub location: Location,
@@ -40,6 +58,7 @@ pub struct Settings {
     pub notices: Vec<Notice>,
     pub recruitment: Option<Recruitment>,
     pub public_links: Vec<PublicLink>,
+    pub traffic: TrafficLink,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -61,6 +80,7 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
         notices: get(pool, "notices").await?.unwrap_or_default(),
         recruitment: get(pool, "recruitment").await?.flatten(),
         public_links: get(pool, "public_links").await?.unwrap_or_default(),
+        traffic: get(pool, "traffic").await?.unwrap_or_default(),
     })
 }
 
@@ -75,6 +95,7 @@ pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
         ("notices", to_json(&s.notices)?),
         ("recruitment", to_json(&s.recruitment)?),
         ("public_links", to_json(&s.public_links)?),
+        ("traffic", to_json(&s.traffic)?),
     ];
     let mut tx = pool.begin().await?;
     for (key, value) in rows {
@@ -128,6 +149,7 @@ mod tests {
         assert!(s.notices.is_empty());
         assert_eq!(s.recruitment, None);
         assert!(s.public_links.is_empty());
+        assert_eq!(s.traffic, TrafficLink::default());
     }
 
     #[tokio::test]
@@ -158,6 +180,12 @@ mod tests {
             label: "Rechner Wache".into(),
             hash: "ab".repeat(32),
         }];
+        s.traffic = TrafficLink {
+            tomtom_key: Some("schluessel".into()),
+            flow: true,
+            incidents: false,
+            speed_cameras: true,
+        };
         save(&pool, &s).await.unwrap();
         assert_eq!(load(&pool).await.unwrap(), s);
         s.suchlage = None;

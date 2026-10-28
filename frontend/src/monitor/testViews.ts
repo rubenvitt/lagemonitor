@@ -56,6 +56,7 @@ export function makeView(over: Partial<MonitorView> = {}): MonitorView {
     suchlage: null,
     notices: [],
     recruitment: null,
+    traffic: { flow: false, flowError: null, incidents: null, speedCameras: null },
     ...over,
   };
 }

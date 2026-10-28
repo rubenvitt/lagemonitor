@@ -1,0 +1,28 @@
+{
+  "incidents": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "LineString", "coordinates": [[10.5512, 52.9701], [10.5560, 52.9688], [10.5611, 52.9672]] },
+      "properties": {
+        "id": "a1b2c3",
+        "iconCategory": 9,
+        "events": [{ "description": "Bauarbeiten" }],
+        "startTime": "2026-10-20T06:00:00Z",
+        "endTime": "2026-11-15T16:00:00Z",
+        "from": "Uelzen-Oldenstadt",
+        "to": "Uelzen-Mitte",
+        "roadNumbers": ["B4"]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [10.6122, 52.9301] },
+      "properties": { "id": "d4e5f6", "iconCategory": 8, "events": [], "startTime": null, "endTime": null, "from": null, "to": null, "roadNumbers": [] }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [10.4, 52.9] },
+      "properties": { "id": "stau", "iconCategory": 6, "events": [{ "description": "Stau" }], "roadNumbers": ["A7"] }
+    }
+  ]
+}
