@@ -384,7 +384,7 @@ docker compose logs -f
 ## Sicherheit
 
 - Der Lagemonitor darf **nie** auf allen Adressen lauschen. Trage deshalb in `LAGEMONITOR_BIND` niemals `0.0.0.0` ein, nur `127.0.0.1` und die Adresse des Fahrzeugnetzes. Das ist in `compose.yaml` bereits so.
-- Der Lagemonitor hat in dieser Version **keine Anmeldung**. Jeder im Fahrzeugnetz kann ihn sehen. Von außen (Mobilfunk, Satellit) darf er nicht erreichbar sein.
+- Auf den Adressen aus `LAGEMONITOR_BIND` hat der Lagemonitor **keine Anmeldung**. Jeder im Fahrzeugnetz kann ihn sehen. Von außen (Mobilfunk, Satellit) darf er so nicht erreichbar sein. Für Zugriff von außen gibt es `LAGEMONITOR_AUTH_BIND` mit Anmeldung über Pocket ID; wie das aussieht, zeigt die Online-Instanz in [`cloud/README.md`](cloud/README.md).
 - Die Firewall `ufw` soll eingehende Verbindungen auf den Uplink-Schnittstellen sperren, für IPv4 und IPv6. Das Grundgerüst, mit eigenen Schnittstellennamen statt `UPLINK`:
 
   ```bash

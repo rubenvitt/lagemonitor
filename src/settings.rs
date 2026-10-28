@@ -19,6 +19,16 @@ pub struct SuchlageLink {
     pub video: bool,
 }
 
+/// Ein Link, mit dem ein Rechner den Monitor ohne Pocket ID sieht (`auth::link`). Angelegt und
+/// widerrufen in der Suite; hier steht nur der SHA-256 des Schlüssels.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicLink {
+    pub id: String,
+    pub label: String,
+    pub hash: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub location: Location,
@@ -29,6 +39,7 @@ pub struct Settings {
     /// Meldungen fürs Band; auch abgelaufene bleiben bis zur nächsten Abholung hier stehen.
     pub notices: Vec<Notice>,
     pub recruitment: Option<Recruitment>,
+    pub public_links: Vec<PublicLink>,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -49,6 +60,7 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
         suchlage: get(pool, "suchlage").await?.flatten(),
         notices: get(pool, "notices").await?.unwrap_or_default(),
         recruitment: get(pool, "recruitment").await?.flatten(),
+        public_links: get(pool, "public_links").await?.unwrap_or_default(),
     })
 }
 
@@ -62,6 +74,7 @@ pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
         ("suchlage", to_json(&s.suchlage)?),
         ("notices", to_json(&s.notices)?),
         ("recruitment", to_json(&s.recruitment)?),
+        ("public_links", to_json(&s.public_links)?),
     ];
     let mut tx = pool.begin().await?;
     for (key, value) in rows {
@@ -114,6 +127,7 @@ mod tests {
         assert_eq!(s.suchlage, None);
         assert!(s.notices.is_empty());
         assert_eq!(s.recruitment, None);
+        assert!(s.public_links.is_empty());
     }
 
     #[tokio::test]
@@ -139,6 +153,11 @@ mod tests {
             url: "https://drk.example.org/mitmachen".into(),
             text: "Lust mitzuhelfen?".into(),
         });
+        s.public_links = vec![PublicLink {
+            id: "l1".into(),
+            label: "Rechner Wache".into(),
+            hash: "ab".repeat(32),
+        }];
         save(&pool, &s).await.unwrap();
         assert_eq!(load(&pool).await.unwrap(), s);
         s.suchlage = None;

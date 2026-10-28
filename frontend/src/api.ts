@@ -2,7 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import type { MonitorView } from './contract/MonitorView';
 
 export async function fetchMonitor(): Promise<MonitorView> {
-  const res = await fetch('/api/monitor');
+  // Relativ: Die Online-Instanz hängt unter /monitor (deploy/cloud/compose.yaml).
+  const res = await fetch('api/monitor');
+  // Nur die Instanz mit Anmeldung antwortet 401: Sitzung abgelaufen oder Link widerrufen. Neu laden
+  // führt über den Server zur Anmeldung.
+  if (res.status === 401) window.location.reload();
   if (!res.ok) throw new Error(`Monitor-Abfrage fehlgeschlagen: HTTP ${res.status}`);
   return res.json() as Promise<MonitorView>;
 }

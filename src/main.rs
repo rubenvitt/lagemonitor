@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // kennen. Ohne Netz nicht lange warten, der letzte Stand liegt in `settings`.
     let _ = tokio::time::timeout(CONFIG_AT_BOOT, poller::poll_config(&state)).await;
     poller::spawn(state.clone());
-    let router = app::router(state);
+    let router = app::router(state.clone());
 
     let mut servers = JoinSet::new();
     // Loopback zuerst und zwingend: daran hängt der Kiosk. Eine LAN-Adresse fehlt beim Booten
@@ -37,6 +37,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         servers.spawn(
             async move { axum::serve(bind_with_retry(addr, LAN_RETRY).await, router).await },
         );
+    }
+    // Mit Anmeldung (Pocket ID) darf auch `0.0.0.0` sein: im Container hinter Traefik.
+    if !boot.auth_binds.is_empty() {
+        let guarded = app::router_with_login(state);
+        for addr in &boot.auth_binds {
+            let listener = TcpListener::bind(addr).await?;
+            tracing::info!(%addr, "lauscht, nur mit Anmeldung");
+            servers.spawn(axum::serve(listener, guarded.clone()).into_future());
+        }
     }
     // Endet ein Listener, endet das ganze Programm.
     if let Some(done) = servers.join_next().await {
