@@ -29,13 +29,13 @@ test('Fehler ohne Daten: Server nicht erreichbar, nie „keine Warnungen“', ()
   expect(screen.queryByText(/keine Warnungen/)).toBeNull();
 });
 
-test('frischer Stand: Ruhe', () => {
+test('frischer Stand: keine Warnungen', () => {
   answer({ data: makeView(), dataUpdatedAt: Date.now() });
   render(<MonitorPage />);
-  expect(screen.getByText('RUHE · keine Warnungen')).toBeInTheDocument();
+  expect(screen.getByText('keine Warnungen')).toBeInTheDocument();
 });
 
-test('Fehler mit altem Stand: veraltet statt Ruhe', () => {
+test('Fehler mit altem Stand: veraltet statt „keine Warnungen“', () => {
   answer({ data: makeView(), isError: true, dataUpdatedAt: Date.now() });
   render(<MonitorPage />);
   expect(screen.getByText(/^Warnstand veraltet/)).toBeInTheDocument();
@@ -90,7 +90,7 @@ test('eine Warnung über der Schwelle geht dem Einsatz im Status vor', () => {
 test('ohne Einsatz kein Suchlage-Status', () => {
   answer({ data: withSuchlage({ mission: null, video: null }), dataUpdatedAt: Date.now() });
   render(<MonitorPage />);
-  expect(screen.getByText('RUHE · keine Warnungen')).toBeInTheDocument();
+  expect(screen.getByText('keine Warnungen')).toBeInTheDocument();
   expect(screen.getByText('Suchlage · kein Einsatz')).toBeInTheDocument();
 });
 
