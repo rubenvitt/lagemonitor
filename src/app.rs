@@ -96,6 +96,7 @@ pub fn router(state: AppState) -> Router {
             get(web::video::hls),
         )
         .fallback(fallback)
+        .layer(axum::middleware::map_response(static_files::stand_header))
         .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
