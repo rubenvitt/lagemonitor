@@ -40,3 +40,10 @@ test('ohne Antwort vom Server: Warnlage unbekannt, mit Grund', () => {
   render(<Header layout={UNKNOWN_LAYOUT} nowMs={NOW} note="Server nicht erreichbar" />);
   expect(screen.getByText('WARNLAGE UNBEKANNT · Server nicht erreichbar')).toBeInTheDocument();
 });
+
+test('Uhr zeigt die taktische Zeit, die Uhrzeit für sich hervorgehoben', () => {
+  const { container } = renderHeader();
+  const uhr = container.querySelector('.lm-uhr');
+  expect(uhr?.textContent).toMatch(/^\d{6}[a-zä]{3}\d{2}$/);
+  expect(uhr?.querySelector('.lm-dtg-zeit')?.textContent).toMatch(/^\d{4}$/);
+});

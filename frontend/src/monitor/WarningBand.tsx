@@ -1,6 +1,6 @@
 import type { Provider } from '../contract/Provider';
 import type { Warning } from '../contract/Warning';
-import { clock } from './format';
+import { taktischText } from './format';
 
 export const PROVIDER_LABEL: Record<Provider, string> = {
   dwd: 'DWD',
@@ -23,7 +23,7 @@ export default function WarningBand({ band }: { band: Warning[] }) {
       </span>
       <span className="lm-band-titel">{top.headline}</span>
       <span className="lm-band-meta">
-        {top.expires ? `bis ${clock(top.expires)} · ${source}` : source}
+        {top.expires ? `bis ${taktischText(top.expires)} · ${source}` : source}
         {band.length > 1 && <span className="lm-band-weitere">+{band.length - 1} weitere</span>}
       </span>
     </section>
