@@ -5,7 +5,8 @@ import { usePlayer } from '../video/usePlayer';
 import type { PlayerState } from '../video/playerMachine';
 
 /** Pfad des Video-Proxys auf diesem Server (`web::video`). */
-export const VIDEO_BASE = '/api/suchlage/video';
+/** Relativ wie alle Abfragen, damit der Monitor auch unter einem Pfad läuft. */
+export const VIDEO_BASE = 'api/suchlage/video';
 
 function stateText(p: PlayerState): string {
   switch (p.kind) {

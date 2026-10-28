@@ -28,8 +28,10 @@ pub struct AppState {
     pub tiles: Option<SqlitePool>,
     /// Letzter Suchlage-Stand. Nur im Speicher: Er altert in Sekunden, nach einem Neustart zählt er nicht.
     pub suchlage: Arc<RwLock<Option<SuchlageSnapshot>>>,
-    /// Für Suite, Suchlage und den Video-Proxy.
+    /// Für Suite, Suchlage, den Video-Proxy und die Anmeldung.
     pub http: reqwest::Client,
+    /// Endpunkte von Pocket ID, beim ersten Anmelden geholt.
+    pub discovery: Arc<RwLock<Option<crate::auth::Discovery>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +64,7 @@ impl AppState {
             tiles,
             suchlage: Arc::default(),
             http: reqwest::Client::new(),
+            discovery: Arc::default(),
         }
     }
 }
@@ -96,6 +99,24 @@ pub fn router(state: AppState) -> Router {
         .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Derselbe Monitor, aber nur nach Anmeldung über Pocket ID (`LAGEMONITOR_AUTH_BIND`).
+pub fn router_with_login(state: AppState) -> Router {
+    let guarded = router(state.clone()).layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        crate::auth::require,
+    ));
+    Router::new()
+        .route("/auth/login", get(crate::auth::login))
+        .route("/auth/callback", get(crate::auth::callback))
+        .route("/auth/logout", get(crate::auth::logout))
+        .route(
+            "/auth/link",
+            get(crate::auth::link_page).post(crate::auth::link_login),
+        )
+        .with_state(state)
+        .merge(guarded)
 }
 
 async fn health() -> Json<serde_json::Value> {

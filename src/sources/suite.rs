@@ -8,7 +8,7 @@ use serde::Deserialize;
 use super::{SourceError, endpoint, get_bytes_as};
 use crate::config::SuiteLink;
 use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity};
-use crate::settings::{Settings, SuchlageLink};
+use crate::settings::{PublicLink, Settings, SuchlageLink};
 
 /// Version des Formats, die dieser Monitor versteht.
 pub const CONFIG_VERSION: u32 = 1;
@@ -27,6 +27,9 @@ struct Body {
     notices: Vec<RawNotice>,
     #[serde(default)]
     recruitment: Option<Recruitment>,
+    /// Links ohne Anmeldung für die Online-Instanz; eine Suite ohne das Feld hat keine.
+    #[serde(default)]
+    public_links: Vec<PublicLink>,
 }
 
 #[derive(Deserialize)]
@@ -88,6 +91,16 @@ pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
             .map(notice)
             .collect::<Result<_, _>>()?,
         recruitment: recruitment(raw.recruitment),
+        // Nur ein SHA-256 in Hex ist ein Hash; alles andere fällt still weg.
+        public_links: raw
+            .public_links
+            .into_iter()
+            .filter(|l| l.hash.len() == 64 && l.hash.bytes().all(|b| b.is_ascii_hexdigit()))
+            .map(|l| PublicLink {
+                hash: l.hash.to_ascii_lowercase(),
+                ..l
+            })
+            .collect(),
     })
 }
 
@@ -144,6 +157,24 @@ pub(crate) mod tests {
         assert_eq!(s.notices[0].expires_at_ms, 1_793_188_800_000);
         assert_eq!(s.notices[1].countdown_to_ms, None);
         assert_eq!(s.recruitment.unwrap().text, "Lust mitzuhelfen?");
+    }
+
+    #[test]
+    fn public_links_are_read_and_bad_hashes_dropped() {
+        let good = "AB".repeat(32);
+        let body = EXAMPLE.replace(
+            "\"suchlage\": {",
+            &format!(
+                r#""publicLinks": [{{ "id": "l1", "label": "Rechner Wache", "hash": "{good}" }},
+                                  {{ "id": "l2", "label": "kaputt", "hash": "geheim" }}],
+                   "suchlage": {{"#
+            ),
+        );
+        let s = parse(body.as_bytes()).unwrap();
+        assert_eq!(s.public_links.len(), 1);
+        assert_eq!(s.public_links[0].label, "Rechner Wache");
+        assert_eq!(s.public_links[0].hash, "ab".repeat(32));
+        assert!(parse(EXAMPLE.as_bytes()).unwrap().public_links.is_empty());
     }
 
     #[test]
