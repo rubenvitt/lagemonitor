@@ -234,6 +234,30 @@ pub struct SuchlageView {
     pub video: Option<SuchlageVideo>,
 }
 
+/// Eine Meldung fürs Band aus der IUK-Suite, etwa „Nächste Lagebesprechung“. Jede läuft ab; der
+/// Server gibt nur laufende heraus, die Oberfläche prüft den Ablauf mit ihrer Uhr noch einmal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct Notice {
+    pub id: String,
+    pub text: String,
+    /// Bis wann heruntergezählt wird („in 42 min“); `null` ohne Countdown.
+    #[ts(type = "number | null")]
+    pub countdown_to_ms: Option<i64>,
+    #[ts(type = "number")]
+    pub expires_at_ms: i64,
+}
+
+/// QR-Code fürs Ehrenamt: wohin er führt und der Satz daneben. Nur `https://`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct Recruitment {
+    pub url: String,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../frontend/src/contract/")]
@@ -250,4 +274,8 @@ pub struct MonitorView {
     pub config: ConfigState,
     /// `null`, wenn das Modul aus oder Suchlage nicht verbunden ist.
     pub suchlage: Option<Sourced<SuchlageView>>,
+    /// Laufende Meldungen, die zuerst angelegte oben.
+    pub notices: Vec<Notice>,
+    /// `null`: kein QR-Code fürs Ehrenamt.
+    pub recruitment: Option<Recruitment>,
 }

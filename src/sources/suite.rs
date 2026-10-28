@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use super::{SourceError, endpoint, get_bytes_as};
 use crate::config::SuiteLink;
-use crate::contract::{Location, Modules, Region, Severity};
+use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity};
 use crate::settings::{Settings, SuchlageLink};
 
 /// Version des Formats, die dieser Monitor versteht.
@@ -22,6 +22,49 @@ struct Body {
     warn_threshold: Severity,
     modules: Modules,
     suchlage: Option<SuchlageLink>,
+    /// Seit dem Meldungsband; eine Suite ohne das Feld schickt keine Meldungen.
+    #[serde(default)]
+    notices: Vec<RawNotice>,
+    #[serde(default)]
+    recruitment: Option<Recruitment>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawNotice {
+    id: String,
+    text: String,
+    countdown_to: Option<String>,
+    expires_at: String,
+}
+
+fn ms(iso: &str) -> Result<i64, SourceError> {
+    chrono::DateTime::parse_from_rfc3339(iso)
+        .map(|t| t.timestamp_millis())
+        .map_err(|e| SourceError::Parse(format!("Meldung: Zeitpunkt {iso:?}: {e}")))
+}
+
+fn notice(raw: RawNotice) -> Result<Notice, SourceError> {
+    Ok(Notice {
+        countdown_to_ms: raw.countdown_to.as_deref().map(ms).transpose()?,
+        expires_at_ms: ms(&raw.expires_at)?,
+        id: raw.id,
+        text: raw.text,
+    })
+}
+
+/// Ein QR-Code führt nur auf `https://`; alles andere fällt still weg, der Rest der Konfiguration gilt.
+/// Höchstlänge wie in der Suite: so passt die Adresse sicher in einen QR-Code (Stufe M), und das
+/// Kodieren im Browser kann nicht scheitern.
+const RECRUITMENT_URL_MAX: usize = 300;
+
+fn recruitment(r: Option<Recruitment>) -> Option<Recruitment> {
+    r.filter(|r| {
+        r.url.len() <= RECRUITMENT_URL_MAX
+            && Url::parse(&r.url)
+                .map(|u| u.scheme() == "https" && u.host_str().is_some())
+                .unwrap_or(false)
+    })
 }
 
 pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
@@ -39,6 +82,12 @@ pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
         warn_threshold: raw.warn_threshold,
         modules: raw.modules,
         suchlage: raw.suchlage,
+        notices: raw
+            .notices
+            .into_iter()
+            .map(notice)
+            .collect::<Result<_, _>>()?,
+        recruitment: recruitment(raw.recruitment),
     })
 }
 
@@ -71,6 +120,49 @@ pub(crate) mod tests {
         assert_eq!(s.warn_threshold, Severity::Moderate);
         assert!(!s.modules.radar);
         assert_eq!(s.suchlage.unwrap().token, "geheim");
+    }
+
+    #[test]
+    fn a_suite_without_notices_still_works() {
+        let s = parse(EXAMPLE.as_bytes()).unwrap();
+        assert!(s.notices.is_empty());
+        assert_eq!(s.recruitment, None);
+    }
+
+    #[test]
+    fn notices_and_recruitment_are_read() {
+        let body = EXAMPLE.replace(
+            "\"suchlage\": {",
+            r#""notices": [{ "id": "n1", "text": "Nächste Lagebesprechung", "countdownTo": "2026-10-27T13:30:00.000Z", "expiresAt": "2026-10-28T12:00:00.000Z" },
+                           { "id": "n2", "text": "Funk Kanal 34", "countdownTo": null, "expiresAt": "2026-10-28T12:00:00.000Z" }],
+               "recruitment": { "url": "https://drk.example.org/mitmachen", "text": "Lust mitzuhelfen?" },
+               "suchlage": {"#,
+        );
+        let s = parse(body.as_bytes()).unwrap();
+        assert_eq!(s.notices.len(), 2);
+        assert_eq!(s.notices[0].countdown_to_ms, Some(1_793_107_800_000));
+        assert_eq!(s.notices[0].expires_at_ms, 1_793_188_800_000);
+        assert_eq!(s.notices[1].countdown_to_ms, None);
+        assert_eq!(s.recruitment.unwrap().text, "Lust mitzuhelfen?");
+    }
+
+    #[test]
+    fn recruitment_needs_https() {
+        let body = EXAMPLE.replace(
+            "\"suchlage\": {",
+            r#""recruitment": { "url": "javascript:alert(1)", "text": "x" }, "suchlage": {"#,
+        );
+        assert_eq!(parse(body.as_bytes()).unwrap().recruitment, None);
+    }
+
+    #[test]
+    fn recruitment_url_has_a_length_limit() {
+        let lang = format!("https://example.org/{}", "a".repeat(300));
+        let body = EXAMPLE.replace(
+            "\"suchlage\": {",
+            &format!(r#""recruitment": {{ "url": "{lang}", "text": "x" }}, "suchlage": {{"#),
+        );
+        assert_eq!(parse(body.as_bytes()).unwrap().recruitment, None);
     }
 
     #[test]

@@ -5,6 +5,8 @@ import DronePanel from './DronePanel';
 import Footer from './Footer';
 import Header from './Header';
 import MapPanel from './MapPanel';
+import NoticeBand from './NoticeBand';
+import RecruitmentQr from './RecruitmentQr';
 import WarningBand from './WarningBand';
 import WeatherPanel from './WeatherPanel';
 import { isDaylight } from './daylight';
@@ -57,11 +59,14 @@ export default function MonitorPage() {
   const listed = modules.warningList ? layout.listed : [];
   const sideColumn = modules.weather || listed.length > 0;
   const video = einsatz && !view.suchlage?.stale ? einsatz.video : null;
+  // Der QR-Code fürs Ehrenamt nur in ruhiger Lage: bei Warnung oder Einsatz gehört der Bildschirm der Lage.
+  const recruitment = layout.mode !== 'warnung' && !einsatz ? view.recruitment : null;
   return (
     <div className="lm">
       <Header view={view} layout={layout} nowMs={clockNow} />
       <div className="lm-rumpf">
         {layout.mode === 'warnung' && <WarningBand band={layout.band} />}
+        <NoticeBand notices={view.notices} nowMs={serverNow(view.nowMs, dataUpdatedAt, clockNow)} />
         <div className="lm-spalten" data-seitenspalte={sideColumn}>
           <MapPanel
             lat={location.lat}
@@ -74,7 +79,9 @@ export default function MonitorPage() {
             suchlage={einsatz}
             droneOpen={video !== null}
             sideColumn={sideColumn}
-          />
+          >
+            {recruitment && <RecruitmentQr recruitment={recruitment} />}
+          </MapPanel>
           {sideColumn && (
             <WeatherPanel weather={modules.weather ? weather : null} label={location.label} listed={listed} />
           )}

@@ -101,5 +101,12 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
         modules: cfg.modules,
         config,
         suchlage,
+        // Abgelaufenes geht nicht hinaus, auch wenn die Suite länger nicht erreichbar war.
+        notices: cfg
+            .notices
+            .into_iter()
+            .filter(|n| n.expires_at_ms > now_ms)
+            .collect(),
+        recruitment: cfg.recruitment,
     }))
 }

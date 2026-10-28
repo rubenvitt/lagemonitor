@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Map as MapLibreMap, type ExpressionSpecification, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
 import '../map/maplibreWorker';
 import { basemapStyle } from '../map/basemapStyle';
@@ -24,12 +24,14 @@ interface Props {
   droneOpen: boolean;
   /** Rechts steht die Wetterspalte (bestimmt, wie viel das Drohnenbild verdeckt). */
   sideColumn: boolean;
+  /** Liegt über der Karte, etwa der QR-Code fürs Ehrenamt. */
+  children?: ReactNode;
 }
 
 type Data = Parameters<GeoJSONSource['setData']>[0];
 
 /** Dünne Hülle um maplibre (läuft nicht in jsdom); die Logik steckt in `mapData.ts`. */
-export default function MapPanel({ lat, lon, label, offline, band, listed, radarAt, suchlage, droneOpen, sideColumn }: Props) {
+export default function MapPanel({ lat, lon, label, offline, band, listed, radarAt, suchlage, droneOpen, sideColumn, children }: Props) {
   const { effektiv } = useThemeMode();
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MapLibreMap | null>(null);
@@ -146,6 +148,7 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
         </div>
         <div className="lm-zahl">{label}</div>
       </div>
+      {children}
     </section>
   );
 }

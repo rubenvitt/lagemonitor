@@ -54,6 +54,8 @@ export function makeView(over: Partial<MonitorView> = {}): MonitorView {
     modules: { weather: true, radar: true, warningAreas: true, warningList: true, suchlage: false },
     config: { fromSuite: false, fetchedAtMs: null, error: null },
     suchlage: null,
+    notices: [],
+    recruitment: null,
     ...over,
   };
 }

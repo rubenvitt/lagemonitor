@@ -75,6 +75,8 @@ Die Admin-UI ist **Teil der iuk-suite** (Modul „Lagemonitor“), mit Vorschau 
 
 Der Einwand von damals bleibt richtig und ist so gelöst: Der Lagemonitor **holt** die Konfiguration jede Minute aus der Suite (`GET /api/konfiguration`, Zugangsschlüssel als Bearer) und schreibt sie in seine Tabelle `settings`. Ohne Internet läuft er mit dem letzten Stand weiter; der Fuß zeigt dann, dass die Abholung scheitert. Ohne Suite-Adresse gilt allein die lokale Tabelle.
 
+*Ergänzt am 27.10.2026 auf Wunsch von Ruben (LGM-6):* Die Suite schickt dazu **Meldungen** (`notices`) fürs blaue Band unter dem Warnband, etwa „Nächste Lagebesprechung · in 42 min“. Jede hat ein Ablaufdatum; der Monitor lässt Abgelaufenes selbst weg, auch ohne Verbindung zur Suite. Und optional einen **QR-Code fürs Ehrenamt** (`recruitment`, Vorgabe aus), unten rechts auf der Karte, nur in ruhiger Lage: bei Warnung im Band oder laufendem Einsatz gehört der Bildschirm der Lage.
+
 ### 4.5 Relevanz statt Karussell
 Jedes Widget meldet selbst, ob es gerade etwas zu sagen hat, und mit welcher Dringlichkeit. Das Layout gibt dringlichen Widgets mehr Platz und lässt Widgets ohne Inhalt zurücktreten. Der Rahmen (Kopfzeile mit Uhr und Status, Fußzeile mit Datenstand) ist immer sichtbar. Die Admin-UI kann pinnen, ausblenden, sortieren und eine Ansicht erzwingen. Ruhe und Schaufenster sind die Zustände, wenn nichts anliegt.
 
