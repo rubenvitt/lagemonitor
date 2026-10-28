@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Startet den Kiosk neu, sobald ein Bildschirm neu verbunden ist. cage erkennt den Monitor zwar,
+# aber Chromium zeichnet nach einer Zeit ganz ohne Bildschirm nicht wieder (fuekw-server, 28.10.2026).
+# Aufgerufen über die udev-Regel bei jedem drm-Hotplug; Ausschalten löst keinen Neustart aus.
+set -euo pipefail
+shopt -s nullglob
+
+DRM_SYSFS=${DRM_SYSFS:-/sys/class/drm}
+STATE_FILE=${STATE_FILE:-/run/lagemonitor-kiosk-hotplug.state}
+SETTLE=${SETTLE:-2}
+
+sleep "$SETTLE" # Monitore lassen beim Einschalten das HPD-Signal kurz flattern
+
+now=$(for s in "$DRM_SYSFS"/card*-*/status; do
+	if [[ $(<"$s") == connected ]]; then basename "$(dirname "$s")"; fi
+done | sort)
+before=$(cat "$STATE_FILE" 2>/dev/null || true)
+printf '%s\n' "$now" >"$STATE_FILE"
+
+new=$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$now") | grep -v '^$' || true)
+if [[ -n $new ]]; then
+	echo "Bildschirm neu verbunden: $new – Kiosk wird neu gestartet"
+	# try-restart: nichts tun, wenn der Kiosk (noch) nicht läuft, z. B. beim Booten oder abgeschaltet
+	systemctl try-restart lagemonitor-kiosk.service
+fi

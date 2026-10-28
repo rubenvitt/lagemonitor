@@ -1,0 +1,3 @@
+# Jeder Bildschirm-Hotplug (ein- oder ausgeschaltet, ein- oder ausgesteckt) stößt die Prüfung an.
+# --no-block: udev darf nicht warten, die Prüfung selbst entscheidet, ob neu gestartet wird.
+ACTION=="change", SUBSYSTEM=="drm", ENV{HOTPLUG}=="1", RUN+="/usr/bin/systemctl --no-block start lagemonitor-kiosk-hotplug.service"

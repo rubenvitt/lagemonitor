@@ -95,6 +95,26 @@ sudo systemctl enable --now lagemonitor-kiosk.service
 
 Danach sollte der Bildschirm die Seite zeigen. Zur Kontrolle einmal neu starten: `sudo reboot`.
 
+## 7. Bildschirm aus- und wieder einschalten
+
+Viele Monitore melden sich beim Ausschalten ab. cage erkennt den Monitor beim Einschalten wieder, aber Chromium
+zeichnet nach einer Zeit ganz ohne Bildschirm nicht mehr neu: Das Bild bleibt schwarz, auch wenn der Monitor
+beim Booten aus war. Deshalb startet eine udev-Regel den Kiosk neu, sobald ein Bildschirm **neu verbunden** ist.
+Ausschalten löst nichts aus.
+
+```bash
+cd deploy/kiosk
+sudo install -m 0755 lagemonitor-kiosk-hotplug /usr/local/sbin/
+sudo install -m 0644 lagemonitor-kiosk-hotplug.service /etc/systemd/system/
+sudo install -m 0644 90-lagemonitor-kiosk-hotplug.rules /etc/udev/rules.d/
+sudo systemctl daemon-reload
+sudo udevadm control --reload
+```
+
+Zum Prüfen den Monitor aus- und wieder einschalten: Nach ein paar Sekunden ist das Bild wieder da, und
+`journalctl -u lagemonitor-kiosk-hotplug -b` zeigt „Bildschirm neu verbunden: …“. Die Erkennungslogik prüft
+`deploy/kiosk/hotplug-test.sh` ohne Server.
+
 ## Betrieb
 
 | Was | Befehl |

@@ -1,0 +1,6 @@
+[Unit]
+Description=Lagemonitor-Kiosk nach Bildschirm-Hotplug neu starten
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lagemonitor-kiosk-hotplug
