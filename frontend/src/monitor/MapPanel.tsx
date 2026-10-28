@@ -102,18 +102,22 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
     };
   }, [effektiv, offline, lat, lon]);
 
+  // `!map?.style`: Wechselt Theme, Kartenquelle oder Standort, entfernt der Effekt oben die alte Karte
+  // (`remove()` löscht `style`), bevor `setMap(null)` ankommt. Die Effekte unten laufen im selben
+  // Commit noch mit ihr, und ein Fehler dort leerte den ganzen Bildschirm (fuekw-server, 28.10.2026).
   useEffect(() => {
-    map?.getSource<GeoJSONSource>('warngebiete')?.setData(warningAreas(band, listed) as Parameters<GeoJSONSource['setData']>[0]);
+    if (!map?.style) return;
+    map.getSource<GeoJSONSource>('warngebiete')?.setData(warningAreas(band, listed) as Parameters<GeoJSONSource['setData']>[0]);
   }, [map, band, listed]);
 
   useEffect(() => {
-    if (!map) return;
+    if (!map?.style) return;
     if (radarAt !== null) map.getSource<RasterTileSource>('radar')?.setTiles([radarTiles(radarAt)]);
     map.setLayoutProperty('radar', 'visibility', radarAt === null ? 'none' : 'visible');
   }, [map, radarAt]);
 
   useEffect(() => {
-    if (!map) return;
+    if (!map?.style) return;
     const empty = { type: 'FeatureCollection', features: [] } as const;
     map.getSource<GeoJSONSource>('suchgebiete')?.setData((suchlage ? areas(suchlage) : empty) as Data);
     map.getSource<GeoJSONSource>('flugspuren')?.setData((suchlage ? coloredTracks(suchlage) : empty) as Data);
@@ -125,7 +129,7 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
   const bounds = suchlage ? suchlageBounds(suchlage) : null;
   const key = boundsKey(bounds);
   useEffect(() => {
-    if (!map) return;
+    if (!map?.style) return;
     const right = droneOpen ? Math.round(map.getContainer().clientWidth * coveredByDrone(sideColumn)) : 0;
     const padding = { top: 80, bottom: 50, left: 50, right: right + 50 };
     if (bounds) map.fitBounds(bounds, { padding, maxZoom: 15, duration: 1200 });
