@@ -42,6 +42,15 @@ pub async fn load<T: DeserializeOwned>(pool: &SqlitePool, source: &str) -> Optio
     }
 }
 
+/// Nur der Zeitpunkt des Stands, ohne ihn zu lesen.
+pub async fn fetched_at(pool: &SqlitePool, source: &str) -> Option<i64> {
+    sqlx::query_scalar("SELECT fetched_at_ms FROM snapshots WHERE source = ?")
+        .bind(source)
+        .fetch_optional(pool)
+        .await
+        .ok()?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,5 +62,7 @@ mod tests {
         save(&pool, "nina", 1000, &vec![1, 2]).await.unwrap();
         save(&pool, "nina", 2000, &vec![3]).await.unwrap();
         assert_eq!(load::<Vec<i32>>(&pool, "nina").await, Some((2000, vec![3])));
+        assert_eq!(fetched_at(&pool, "nina").await, Some(2000));
+        assert_eq!(fetched_at(&pool, "wetter").await, None);
     }
 }

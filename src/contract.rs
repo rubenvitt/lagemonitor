@@ -258,6 +258,60 @@ pub struct Recruitment {
     pub text: String,
 }
 
+/// Welche Störung TomTom meldet. Abgefragt werden nur diese drei (`sources::tomtom`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub enum IncidentKind {
+    RoadWorks,
+    RoadClosed,
+    LaneClosed,
+}
+
+/// Eine Baustelle oder Sperrung von TomTom.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct TrafficIncident {
+    pub id: String,
+    pub kind: IncidentKind,
+    pub description: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub road_numbers: Vec<String>,
+    /// Voraussichtliches Ende, ISO 8601.
+    pub end_time: Option<String>,
+    /// GeoJSON-Geometrie (`Point` oder `LineString`).
+    #[ts(type = "unknown")]
+    pub geometry: serde_json::Value,
+}
+
+/// Ein fester Blitzer aus OpenStreetMap (`highway=speed_camera`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct SpeedCamera {
+    pub id: String,
+    pub lat: f64,
+    pub lon: f64,
+    /// Wie in OSM, etwa `"50"`.
+    pub maxspeed: Option<String>,
+}
+
+/// Verkehrslage. Ausgeschaltetes oder ohne TomTom-Schlüssel Unmögliches kommt als `false`/`null`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct TrafficView {
+    /// Verkehrsfluss-Kacheln liegen unter `api/verkehr/fluss/{hell|dunkel}/{z}/{x}/{y}`.
+    pub flow: bool,
+    /// Der letzte Abruf einer Flusskachel scheiterte (Schlüssel, Kontingent, Netz).
+    pub flow_error: Option<String>,
+    pub incidents: Option<Sourced<Vec<TrafficIncident>>>,
+    /// Nur auf der Online-Instanz, nie im FüKw (`BootConfig::online`).
+    pub speed_cameras: Option<Sourced<Vec<SpeedCamera>>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../frontend/src/contract/")]
@@ -278,4 +332,5 @@ pub struct MonitorView {
     pub notices: Vec<Notice>,
     /// `null`: kein QR-Code fürs Ehrenamt.
     pub recruitment: Option<Recruitment>,
+    pub traffic: TrafficView,
 }

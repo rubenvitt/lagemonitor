@@ -8,7 +8,7 @@ use serde::Deserialize;
 use super::{SourceError, endpoint, get_bytes_as};
 use crate::config::SuiteLink;
 use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity};
-use crate::settings::{PublicLink, Settings, SuchlageLink};
+use crate::settings::{PublicLink, Settings, SuchlageLink, TrafficLink};
 
 /// Version des Formats, die dieser Monitor versteht.
 pub const CONFIG_VERSION: u32 = 1;
@@ -30,6 +30,9 @@ struct Body {
     /// Links ohne Anmeldung für die Online-Instanz; eine Suite ohne das Feld hat keine.
     #[serde(default)]
     public_links: Vec<PublicLink>,
+    /// Verkehrslage; eine Suite ohne das Feld schaltet alles aus.
+    #[serde(default)]
+    traffic: Option<TrafficLink>,
 }
 
 #[derive(Deserialize)]
@@ -70,6 +73,16 @@ fn recruitment(r: Option<Recruitment>) -> Option<Recruitment> {
     })
 }
 
+/// TomTom-Schlüssel sind kurze Folgen aus Buchstaben und Ziffern. Alles andere fällt still weg
+/// (es landet in einer Adresse bei TomTom).
+fn traffic(t: Option<TrafficLink>) -> TrafficLink {
+    let mut t = t.unwrap_or_default();
+    t.tomtom_key = t
+        .tomtom_key
+        .filter(|k| (16..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_alphanumeric()));
+    t
+}
+
 pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
     let raw: Body = serde_json::from_slice(body)
         .map_err(|e| SourceError::Parse(format!("Konfiguration: {e}")))?;
@@ -101,6 +114,7 @@ pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
                 ..l
             })
             .collect(),
+        traffic: traffic(raw.traffic),
     })
 }
 
@@ -175,6 +189,35 @@ pub(crate) mod tests {
         assert_eq!(s.public_links[0].label, "Rechner Wache");
         assert_eq!(s.public_links[0].hash, "ab".repeat(32));
         assert!(parse(EXAMPLE.as_bytes()).unwrap().public_links.is_empty());
+    }
+
+    #[test]
+    fn traffic_is_read_and_a_bad_key_dropped() {
+        assert_eq!(
+            parse(EXAMPLE.as_bytes()).unwrap().traffic,
+            TrafficLink::default()
+        );
+        let with = |key: &str| {
+            EXAMPLE.replace(
+                "\"suchlage\": {",
+                &format!(
+                    r#""traffic": {{ "tomtomKey": "{key}", "flow": true, "incidents": true, "speedCameras": false }}, "suchlage": {{"#
+                ),
+            )
+        };
+        let t = parse(with("AbCdEf0123456789AbCdEf0123456789").as_bytes())
+            .unwrap()
+            .traffic;
+        assert_eq!(
+            t.tomtom_key.as_deref(),
+            Some("AbCdEf0123456789AbCdEf0123456789")
+        );
+        assert!(t.flow && t.incidents && !t.speed_cameras);
+        let t = parse(with("abc&key=x0123456789abcdef").as_bytes())
+            .unwrap()
+            .traffic;
+        assert_eq!(t.tomtom_key, None);
+        assert!(t.flow, "die Schalter gelten weiter");
     }
 
     #[test]

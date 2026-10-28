@@ -12,6 +12,8 @@ Verwaltet wird der Monitor in der IUK-Suite (Modul „Lagemonitor“): Standort,
 
 Läuft in Suchlage ein Einsatz, zeigt die Karte seine Suchgebiete, die Flugspuren aller Flüge und die Drohnen; meldet Suchlage ein Livebild, fährt es von rechts ein. Der Server fragt Suchlage mit einem Großbild-Zugang (`/api/lagemonitor/v1`) und reicht das Video durch, der Kiosk-Browser sieht Suchlage nie.
 
+Verkehrslage (in der Suite einzeln schaltbar): Verkehrsfluss und Baustellen/Sperrungen von TomTom, dazu feste Blitzer aus OpenStreetMap, die nur die Online-Instanz zeigt. Den TomTom-Schlüssel trägt man in der Suite ein; der Server holt alles selbst und speichert es lange, der Browser sieht den Schlüssel nie. Das Gratiskontingent (2.500 Störungsabfragen und 200.000 Kacheln im Monat) teilen sich FüKw und Online-Instanz: Störungen stündlich, jede Flusskachel höchstens alle 30 Minuten und je Instanz höchstens 3.000 Kacheln am Tag (`src/web/traffic.rs`); Blitzer einmal am Tag.
+
 ## Entwicklung
 
 `mise run dev` startet den Server, `mise run check` ist das Qualitäts-Gate, `mise run image` baut das Image lokal.

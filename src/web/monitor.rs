@@ -6,7 +6,10 @@ use chrono::Utc;
 use serde::de::DeserializeOwned;
 
 use crate::app::AppState;
-use crate::contract::{ConfigState, MapInfo, MonitorView, Sourced, SuchlageView, Warning, Weather};
+use crate::contract::{
+    ConfigState, MapInfo, MonitorView, Sourced, SpeedCamera, SuchlageView, TrafficIncident,
+    TrafficView, Warning, Weather,
+};
 use crate::error::AppError;
 use crate::{poller, settings, store};
 
@@ -14,6 +17,9 @@ const NINA_STALE_MS: i64 = 5 * 60_000;
 const WEATHER_STALE_MS: i64 = 45 * 60_000;
 /// Drei verpasste Abfragen à 5 s.
 const SUCHLAGE_STALE_MS: i64 = 20_000;
+/// Drei verpasste Abfragen; Baustellen ändern sich langsam, der Stand bleibt trotzdem sichtbar.
+const INCIDENTS_STALE_MS: i64 = 3 * poller::INCIDENTS_INTERVAL_MS;
+const SPEED_CAMERA_STALE_MS: i64 = 3 * poller::SPEED_CAMERA_INTERVAL_MS;
 
 async fn sourced<T: DeserializeOwned>(
     state: &AppState,
@@ -69,6 +75,52 @@ async fn suchlage(
     })
 }
 
+/// Ebenen ohne Schlüssel oder ausgeschaltet kommen als `false`/`null`; Blitzer nur online.
+async fn traffic(state: &AppState, cfg: &settings::Settings, now_ms: i64) -> TrafficView {
+    let t = &cfg.traffic;
+    let incidents = match t.key_for(t.incidents) {
+        Some(_) => Some(
+            sourced::<Vec<TrafficIncident>>(
+                state,
+                &poller::incidents_key(&cfg.location),
+                INCIDENTS_STALE_MS,
+                now_ms,
+            )
+            .await,
+        ),
+        None => None,
+    };
+    let speed_cameras = if t.speed_cameras && state.boot.online() {
+        Some(
+            sourced::<Vec<SpeedCamera>>(
+                state,
+                &poller::speed_cameras_key(&cfg.location),
+                SPEED_CAMERA_STALE_MS,
+                now_ms,
+            )
+            .await,
+        )
+    } else {
+        None
+    };
+    let mut flow_error = state
+        .errors
+        .read()
+        .await
+        .get(crate::web::traffic::FLOW_KEY)
+        .cloned();
+    let flow = t.key_for(t.flow).is_some();
+    if !flow {
+        flow_error = None;
+    }
+    TrafficView {
+        flow,
+        flow_error,
+        incidents,
+        speed_cameras,
+    }
+}
+
 async fn config(state: &AppState) -> ConfigState {
     ConfigState {
         from_suite: state.boot.suite.is_some(),
@@ -88,6 +140,7 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
     );
     let suchlage = suchlage(&state, &cfg, now_ms).await;
     let config = config(&state).await;
+    let traffic = traffic(&state, &cfg, now_ms).await;
     Ok(Json(MonitorView {
         now_ms,
         location: cfg.location,
@@ -108,5 +161,6 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
             .filter(|n| n.expires_at_ms > now_ms)
             .collect(),
         recruitment: cfg.recruitment,
+        traffic,
     }))
 }

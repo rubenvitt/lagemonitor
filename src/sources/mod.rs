@@ -5,8 +5,10 @@ use std::time::Duration;
 use reqwest::Url;
 
 pub mod nina;
+pub mod osm;
 pub mod suchlage;
 pub mod suite;
+pub mod tomtom;
 pub mod weather;
 
 #[derive(Debug, thiserror::Error)]

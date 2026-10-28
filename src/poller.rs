@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::app::AppState;
 use crate::app::SuchlageSnapshot;
 use crate::contract::{Location, Region, Warning};
-use crate::sources::{SourceError, nina, suchlage, suite, weather};
+use crate::sources::{SourceError, nina, osm, suchlage, suite, tomtom, weather};
 use crate::{settings, store};
 
 pub const NINA_BASE: &str = "https://warnung.bund.de/api31";
@@ -18,6 +18,14 @@ pub const NINA_INTERVAL: Duration = Duration::from_secs(60);
 pub const WEATHER_INTERVAL: Duration = Duration::from_secs(600);
 pub const CONFIG_INTERVAL: Duration = Duration::from_secs(60);
 pub const SUCHLAGE_INTERVAL: Duration = Duration::from_secs(5);
+/// Takt, in dem nachgesehen wird, ob ein Verkehrs-Stand fällig ist; abgefragt wird viel seltener.
+pub const TRAFFIC_TICK: Duration = Duration::from_secs(60);
+/// Störungen stündlich: 2 Instanzen × 24 × 31 = 1.488 von 2.500 Abfragen im Monat (`sources::tomtom`).
+pub const INCIDENTS_INTERVAL_MS: i64 = 60 * 60_000;
+/// Feste Blitzer ändern sich selten.
+pub const SPEED_CAMERA_INTERVAL_MS: i64 = 24 * 60 * 60_000;
+/// Nach einem Fehlschlag frühestens so viel später noch einmal.
+pub const TRAFFIC_RETRY_MS: i64 = 15 * 60_000;
 
 /// Stand-Schlüssel der Konfiguration aus der Suite (nur Zeitpunkt, die Werte stehen in `settings`).
 pub const CONFIG_KEY: &str = "suite-config";
@@ -31,6 +39,31 @@ pub fn nina_key(region: &Region) -> String {
 
 pub fn weather_key(location: &Location) -> String {
     format!("weather:{:.4},{:.4}", location.lat, location.lon)
+}
+
+pub fn incidents_key(location: &Location) -> String {
+    format!("tomtom:{:.4},{:.4}", location.lat, location.lon)
+}
+
+pub fn speed_cameras_key(location: &Location) -> String {
+    format!("blitzer:{:.4},{:.4}", location.lat, location.lon)
+}
+
+/// Fällig, wenn der Stand älter als `interval_ms` ist (oder fehlt) und der letzte Versuch länger als
+/// `TRAFFIC_RETRY_MS` her. Der Stand liegt in `snapshots`: Ein Neustart fragt nicht neu.
+pub async fn traffic_due(state: &AppState, key: &str, interval_ms: i64, now_ms: i64) -> bool {
+    let fresh = store::fetched_at(&state.pool, key)
+        .await
+        .is_some_and(|at| now_ms - at < interval_ms);
+    let mut attempts = state.traffic_attempts.lock().await;
+    let recently_tried = attempts
+        .get(key)
+        .is_some_and(|&at| now_ms - at < TRAFFIC_RETRY_MS);
+    if fresh || recently_tried {
+        return false;
+    }
+    attempts.insert(key.to_string(), now_ms);
+    true
 }
 
 /// Ein Abruf. Erfolg speichert den Stand und löscht den Fehler; Fehler lässt den alten Stand stehen.
@@ -109,6 +142,44 @@ pub async fn poll_weather(state: &AppState, http: &reqwest::Client, base: &Url) 
     let fetcher =
         move || async move { weather::fetch(&http, &base, &cfg.location, Utc::now()).await };
     run_once(state, &key, fetcher, now_ms).await;
+}
+
+/// Baustellen und Sperrungen von TomTom, feste Blitzer aus OSM (nur online), jeweils nur wenn fällig.
+pub async fn poll_traffic(
+    state: &AppState,
+    http: &reqwest::Client,
+    tomtom_base: &Url,
+    overpass: &Url,
+) {
+    let now = now_ms();
+    if let Err(e) = crate::web::traffic::prune(&state.pool, now).await {
+        tracing::warn!(error = ?e, "alte Verkehrskacheln nicht gelöscht");
+    }
+    let Some(cfg) = load_settings(state).await else {
+        return;
+    };
+    if let Some(key) = cfg.traffic.key_for(cfg.traffic.incidents) {
+        let k = incidents_key(&cfg.location);
+        if traffic_due(state, &k, INCIDENTS_INTERVAL_MS, now).await {
+            let (http, base, key, loc) = (
+                http.clone(),
+                tomtom_base.clone(),
+                key.to_string(),
+                cfg.location.clone(),
+            );
+            let fetcher =
+                move || async move { tomtom::fetch_incidents(&http, &base, &key, &loc).await };
+            run_once(state, &k, fetcher, now_ms).await;
+        }
+    }
+    if cfg.traffic.speed_cameras && state.boot.online() {
+        let k = speed_cameras_key(&cfg.location);
+        if traffic_due(state, &k, SPEED_CAMERA_INTERVAL_MS, now).await {
+            let (http, base, loc) = (http.clone(), overpass.clone(), cfg.location.clone());
+            let fetcher = move || async move { osm::fetch(&http, &base, &loc).await };
+            run_once(state, &k, fetcher, now_ms).await;
+        }
+    }
 }
 
 /// Holt die Konfiguration aus der Suite und schreibt sie in `settings`. Scheitert der Abruf, gilt
@@ -212,6 +283,18 @@ pub fn spawn(state: AppState) {
     let weather_base: Url = BRIGHT_SKY_BASE.parse().expect("gültige Konstante");
 
     let (s, h) = (state.clone(), http.clone());
+    let overpass: Url = osm::OVERPASS_BASE.parse().expect("gültige Konstante");
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(TRAFFIC_TICK);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            let base = s.tomtom_base.clone();
+            poll_traffic(&s, &h, &base, &overpass).await;
+        }
+    });
+
+    let (s, h) = (state.clone(), http.clone());
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(NINA_INTERVAL);
         loop {
@@ -245,5 +328,34 @@ mod tests {
         };
         assert_eq!(nina_key(&region), "nina:031550000000");
         assert_eq!(weather_key(&location), "weather:52.9656,10.5594");
+        assert_eq!(incidents_key(&location), "tomtom:52.9656,10.5594");
+    }
+
+    async fn state() -> AppState {
+        let boot = crate::config::BootConfig::from_lookup(|_| None).unwrap();
+        AppState::new(crate::db::test_pool().await, std::sync::Arc::new(boot)).await
+    }
+
+    #[tokio::test]
+    async fn traffic_is_due_rarely() {
+        let s = state().await;
+        let hour = INCIDENTS_INTERVAL_MS;
+        assert!(
+            traffic_due(&s, "tomtom:x", hour, 1_000_000).await,
+            "noch nie gefragt"
+        );
+        assert!(
+            !traffic_due(&s, "tomtom:x", hour, 1_060_000).await,
+            "gescheitert: erst nach 15 min wieder"
+        );
+        assert!(traffic_due(&s, "tomtom:x", hour, 1_000_000 + TRAFFIC_RETRY_MS).await);
+        store::save(&s.pool, "tomtom:x", 2_000_000, &())
+            .await
+            .unwrap();
+        assert!(
+            !traffic_due(&s, "tomtom:x", hour, 2_000_000 + TRAFFIC_RETRY_MS).await,
+            "Stand frisch"
+        );
+        assert!(traffic_due(&s, "tomtom:x", hour, 2_000_000 + hour).await);
     }
 }
