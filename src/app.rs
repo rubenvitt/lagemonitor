@@ -32,6 +32,8 @@ pub struct AppState {
     pub http: reqwest::Client,
     /// Endpunkte von Pocket ID, beim ersten Anmelden geholt.
     pub discovery: Arc<RwLock<Option<crate::auth::Discovery>>>,
+    /// Zeitpunkt (ms) des letzten Abrufs, den ein unbekannter Link ausgelöst hat (`auth::link_login`).
+    pub link_refresh_ms: Arc<tokio::sync::Mutex<i64>>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +67,7 @@ impl AppState {
             suchlage: Arc::default(),
             http: reqwest::Client::new(),
             discovery: Arc::default(),
+            link_refresh_ms: Arc::default(),
         }
     }
 }

@@ -435,6 +435,34 @@ else fetch("link", { method: "POST", headers: { "content-type": "application/jso
         .into_response()
 }
 
+/// Abstand zwischen zwei Abrufen, die ein unbekannter Link auslöst. Die Seite ist ohne Anmeldung
+/// erreichbar; so kann niemand die Suite mit falschen Schlüsseln in Dauerschleife abfragen lassen.
+const LINK_REFRESH_MS: i64 = 10_000;
+
+async fn find_link(
+    state: &AppState,
+    hash: &str,
+) -> Result<Option<crate::settings::PublicLink>, crate::error::AppError> {
+    let links = crate::settings::load(&state.pool).await?.public_links;
+    Ok(links.into_iter().find(|l| l.hash == hash))
+}
+
+/// Holt die Konfiguration außer der Reihe, wenn eine Suite angebunden ist und der letzte solche
+/// Abruf lange genug her ist. `true`, wenn abgerufen wurde.
+async fn refresh_for_link(state: &AppState) -> bool {
+    if state.boot.suite.is_none() {
+        return false;
+    }
+    let mut last = state.link_refresh_ms.lock().await;
+    let now = now_ms();
+    if now - *last < LINK_REFRESH_MS {
+        return false;
+    }
+    *last = now;
+    crate::poller::poll_config(state).await;
+    true
+}
+
 #[derive(Deserialize)]
 pub struct LinkBody {
     key: String,
@@ -447,11 +475,19 @@ pub async fn link_login(
     axum::Json(body): axum::Json<LinkBody>,
 ) -> Response {
     let hash = sha256_hex(body.key.trim());
-    let links = match crate::settings::load(&state.pool).await {
-        Ok(s) => s.public_links,
+    let mut link = match find_link(&state, &hash).await {
+        Ok(l) => l,
         Err(e) => return e.into_response(),
     };
-    let Some(link) = links.into_iter().find(|l| l.hash == hash) else {
+    // Ein frisch angelegter Link kommt sonst erst mit dem nächsten Abruf (bis zu einer Minute) an:
+    // dann einmal sofort bei der Suite nachfragen, höchstens alle LINK_REFRESH_MS.
+    if link.is_none() && refresh_for_link(&state).await {
+        link = match find_link(&state, &hash).await {
+            Ok(l) => l,
+            Err(e) => return e.into_response(),
+        };
+    }
+    let Some(link) = link else {
         tracing::info!("Link ohne Gültigkeit");
         return (
             StatusCode::FORBIDDEN,
@@ -626,6 +662,61 @@ mod tests {
             send(&app, "/api/monitor", Some(&cookie)).await.status(),
             StatusCode::UNAUTHORIZED,
             "widerrufen in der Suite"
+        );
+    }
+
+    /// Eine Suite als Doppel, die genau einen Link kennt, und zählt, wie oft sie gefragt wurde.
+    async fn fake_suite_with_link(hash: String, calls: Arc<Mutex<u32>>) -> reqwest::Url {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let config = crate::sources::suite::tests::EXAMPLE.replacen(
+            "\"version\": 1,",
+            &format!(r#""version": 1, "publicLinks": [{{ "id": "l9", "label": "Neu", "hash": "{hash}" }}],"#),
+            1,
+        );
+        let app = Router::new().route(
+            "/api/konfiguration",
+            get(move || async move {
+                *calls.lock().unwrap() += 1;
+                config
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        base.parse().unwrap()
+    }
+
+    #[tokio::test]
+    async fn fresh_link_is_fetched_from_the_suite_right_away() {
+        let key = "y".repeat(43);
+        let calls = Arc::new(Mutex::new(0));
+        let suite = fake_suite_with_link(sha256_hex(&key), Arc::clone(&calls)).await;
+        let (_, state) = guarded_at("http://127.0.0.1:9", "http://lagebild.test").await;
+        let mut boot = (*state.boot).clone();
+        boot.suite = Some(crate::config::SuiteLink {
+            url: suite,
+            token: "suite".into(),
+        });
+        let state = AppState {
+            boot: Arc::new(boot),
+            ..state
+        };
+        let app = crate::app::router_with_login(state.clone());
+
+        assert_eq!(post_link(&app, &key).await.status(), StatusCode::NO_CONTENT);
+        assert_eq!(*calls.lock().unwrap(), 1, "einmal außer der Reihe gefragt");
+
+        assert_eq!(
+            post_link(&app, "falsch").await.status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            post_link(&app, "auch-falsch").await.status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            *calls.lock().unwrap(),
+            1,
+            "falsche Schlüssel fragen nicht in Dauerschleife"
         );
     }
 
