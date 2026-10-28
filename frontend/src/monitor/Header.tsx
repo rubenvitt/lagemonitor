@@ -1,6 +1,7 @@
 import type { MonitorView } from '../contract/MonitorView';
 import { clock } from './format';
 import type { Layout } from './selectLayout';
+import TaktischeZeit from './TaktischeZeit';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -54,7 +55,7 @@ export default function Header({ view, layout, nowMs, note }: Props) {
         <span className="lm-punkt" aria-hidden />
         {note ? `${text} · ${note}` : text}
       </span>
-      <span className="lm-uhr">{clock(nowMs, true)}</span>
+      <TaktischeZeit at={nowMs} className="lm-uhr" />
     </header>
   );
 }
