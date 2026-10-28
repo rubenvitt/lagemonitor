@@ -27,8 +27,9 @@ export function taktisch(at: number | string): TaktischeZeit {
   };
 }
 
-/** Taktische Zeit als eine Zeichenkette, für Fließtext. */
+/** Taktische Zeit als eine Zeichenkette, für Fließtext; ein unlesbarer Zeitpunkt heißt „unbekannt“. */
 export function taktischText(at: number | string): string {
+  if (Number.isNaN(new Date(at).getTime())) return 'unbekannt';
   const t = taktisch(at);
   return t.tag + t.zeit + t.monatJahr;
 }

@@ -9,4 +9,8 @@ describe('taktisch', () => {
   it('füllt einstellige Werte mit Null auf und kennt den März', () => {
     expect(taktisch(new Date(2027, 2, 1, 0, 5).getTime())).toEqual({ tag: '01', zeit: '0005', monatJahr: 'mär27' });
   });
+
+  it('zeigt einen unlesbaren Zeitpunkt nicht als NaN', () => {
+    expect(taktischText('kein Datum')).toBe('unbekannt');
+  });
 });
