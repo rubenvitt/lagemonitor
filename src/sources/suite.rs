@@ -8,7 +8,9 @@ use serde::Deserialize;
 use super::{SourceError, endpoint, get_bytes_as};
 use crate::config::SuiteLink;
 use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity};
-use crate::settings::{PublicLink, Settings, SuchlageLink, TrafficLink};
+use crate::settings::{
+    MAP_ZOOM_DEFAULT, MAP_ZOOM_MAX, MAP_ZOOM_MIN, PublicLink, Settings, SuchlageLink, TrafficLink,
+};
 
 /// Version des Formats, die dieser Monitor versteht.
 pub const CONFIG_VERSION: u32 = 1;
@@ -33,6 +35,21 @@ struct Body {
     /// Verkehrslage; eine Suite ohne das Feld schaltet alles aus.
     #[serde(default)]
     traffic: Option<TrafficLink>,
+    /// Kartenausschnitt; eine Suite ohne das Feld lässt die Vorgabe stehen.
+    #[serde(default)]
+    map: Option<RawMap>,
+}
+
+#[derive(Deserialize)]
+struct RawMap {
+    zoom: Option<f64>,
+}
+
+/// Eine Zoomstufe außerhalb des Bereichs gilt als der nächste Rand; ohne Zahl gilt die Vorgabe.
+fn map_zoom(m: Option<RawMap>) -> f64 {
+    m.and_then(|m| m.zoom)
+        .filter(|z| z.is_finite())
+        .map_or(MAP_ZOOM_DEFAULT, |z| z.clamp(MAP_ZOOM_MIN, MAP_ZOOM_MAX))
 }
 
 #[derive(Deserialize)]
@@ -115,6 +132,7 @@ pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
             })
             .collect(),
         traffic: traffic(raw.traffic),
+        map_zoom: map_zoom(raw.map),
     })
 }
 
@@ -218,6 +236,26 @@ pub(crate) mod tests {
             .traffic;
         assert_eq!(t.tomtom_key, None);
         assert!(t.flow, "die Schalter gelten weiter");
+    }
+
+    #[test]
+    fn map_zoom_is_read_and_clamped() {
+        assert_eq!(
+            parse(EXAMPLE.as_bytes()).unwrap().map_zoom,
+            MAP_ZOOM_DEFAULT
+        );
+        let with = |map: &str| {
+            let body = EXAMPLE.replace(
+                "\"suchlage\": {",
+                &format!(r#""map": {map}, "suchlage": {{"#),
+            );
+            parse(body.as_bytes()).unwrap().map_zoom
+        };
+        assert_eq!(with(r#"{ "zoom": 11.5 }"#), 11.5);
+        assert_eq!(with(r#"{ "zoom": 30 }"#), MAP_ZOOM_MAX);
+        assert_eq!(with(r#"{ "zoom": 1 }"#), MAP_ZOOM_MIN);
+        assert_eq!(with(r#"{ "zoom": null }"#), MAP_ZOOM_DEFAULT);
+        assert_eq!(with("{}"), MAP_ZOOM_DEFAULT);
     }
 
     #[test]

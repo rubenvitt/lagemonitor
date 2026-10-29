@@ -47,6 +47,12 @@ impl TrafficLink {
     }
 }
 
+/// Zoomstufe ohne Einsatz, solange die Suite keine schickt: etwa der Landkreis.
+pub const MAP_ZOOM_DEFAULT: f64 = 9.0;
+/// Was die Suite einstellen darf; außerhalb gilt der nächste Rand.
+pub const MAP_ZOOM_MIN: f64 = 5.0;
+pub const MAP_ZOOM_MAX: f64 = 16.0;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub location: Location,
@@ -59,6 +65,8 @@ pub struct Settings {
     pub recruitment: Option<Recruitment>,
     pub public_links: Vec<PublicLink>,
     pub traffic: TrafficLink,
+    /// Zoomstufe der Karte ohne Einsatz.
+    pub map_zoom: f64,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -81,6 +89,7 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
         recruitment: get(pool, "recruitment").await?.flatten(),
         public_links: get(pool, "public_links").await?.unwrap_or_default(),
         traffic: get(pool, "traffic").await?.unwrap_or_default(),
+        map_zoom: get(pool, "map_zoom").await?.unwrap_or(MAP_ZOOM_DEFAULT),
     })
 }
 
@@ -96,6 +105,7 @@ pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
         ("recruitment", to_json(&s.recruitment)?),
         ("public_links", to_json(&s.public_links)?),
         ("traffic", to_json(&s.traffic)?),
+        ("map_zoom", to_json(&s.map_zoom)?),
     ];
     let mut tx = pool.begin().await?;
     for (key, value) in rows {
@@ -150,6 +160,7 @@ mod tests {
         assert_eq!(s.recruitment, None);
         assert!(s.public_links.is_empty());
         assert_eq!(s.traffic, TrafficLink::default());
+        assert_eq!(s.map_zoom, MAP_ZOOM_DEFAULT);
     }
 
     #[tokio::test]
@@ -186,6 +197,7 @@ mod tests {
             incidents: false,
             speed_cameras: true,
         };
+        s.map_zoom = 11.5;
         save(&pool, &s).await.unwrap();
         assert_eq!(load(&pool).await.unwrap(), s);
         s.suchlage = None;

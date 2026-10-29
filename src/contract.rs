@@ -136,12 +136,14 @@ pub struct Sourced<T> {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../frontend/src/contract/")]
 pub struct MapInfo {
     /// `true`, wenn die Offline-Kacheln (`karte.mbtiles`) geladen sind.
     pub offline: bool,
+    /// Zoomstufe der Karte ohne Einsatz (um den Standort); eingestellt in der Suite.
+    pub zoom: f64,
 }
 
 /// Welche Teile der Monitor zeigt. Das Warnband ist kein Modul: Amtliche Warnungen über der

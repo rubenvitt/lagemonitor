@@ -50,7 +50,7 @@ export function makeView(over: Partial<MonitorView> = {}): MonitorView {
       error: null,
     },
     warnings: { data: [], fetchedAtMs: NOW, stale: false, error: null },
-    map: { offline: false },
+    map: { offline: false, zoom: 9 },
     modules: { weather: true, radar: true, warningAreas: true, warningList: true, suchlage: false },
     config: { fromSuite: false, fetchedAtMs: null, error: null },
     suchlage: null,
