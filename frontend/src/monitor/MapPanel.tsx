@@ -14,7 +14,6 @@ import { aircraftPoints, areas, boundsKey, coloredTracks, coveredByDrone, suchla
 interface Props {
   lat: number;
   lon: number;
-  label: string;
   offline: boolean;
   band: Warning[];
   listed: Warning[];
@@ -44,7 +43,6 @@ type Data = Parameters<GeoJSONSource['setData']>[0];
 export default function MapPanel({
   lat,
   lon,
-  label,
   offline,
   band,
   listed,
@@ -221,36 +219,16 @@ export default function MapPanel({
   useEffect(() => {
     if (!map?.style) return;
     const right = droneOpen ? Math.round(map.getContainer().clientWidth * coveredByDrone(sideColumn)) : 0;
-    const padding = { top: 80, bottom: 50, left: 50, right: right + 50 };
+    const padding = { top: 50, bottom: 50, left: 50, right: right + 50 };
     if (bounds) map.fitBounds(bounds, { padding, maxZoom: 15, duration: 1200 });
     else map.easeTo({ center: [lon, lat], zoom: 9, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
     // `bounds` steckt in `key`; ein neues Array je Abfrage soll nicht neu einpassen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, key, droneOpen, sideColumn, lat, lon]);
 
-  const warnAreas = band.length + listed.length > 0;
-  const hasTracks = suchlage !== null && coloredTracks(suchlage).features.length > 0;
-  const hasSearchAreas = suchlage !== null && areas(suchlage).features.length > 0;
   return (
     <section className="lm-paneel lm-karte">
       <div ref={container} className="lm-karte-flaeche" data-testid="map" />
-      <div className="lm-karte-legende">
-        <div className="lm-augenbraue">
-          {[
-            'Standort',
-            warnAreas && 'Warngebiete',
-            radarAt !== null && 'Radar',
-            trafficFlow && 'Verkehr',
-            incidents.length > 0 && 'Baustellen',
-            speedCameras.length > 0 && 'Blitzer',
-            hasSearchAreas && 'Suchgebiete',
-            hasTracks && 'Flugspuren',
-          ]
-            .filter(Boolean)
-            .join(' + ')}
-        </div>
-        <div className="lm-zahl">{label}</div>
-      </div>
       {children}
     </section>
   );

@@ -175,18 +175,6 @@
   position: absolute;
   inset: 0;
 }
-.lm-karte-legende {
-  position: absolute;
-  left: 14px;
-  top: 12px;
-  padding: 8px 12px;
-  background: var(--lfh-rahmen-grund);
-  color: var(--lfh-rahmen-text);
-  font-size: 15px;
-}
-.lm-karte-legende .lm-augenbraue {
-  color: var(--lfh-rahmen-gedaempft);
-}
 
 /* ── Wetter ───────────────────────────────────────────────────────────── */
 .lm-wetter-jetzt {
