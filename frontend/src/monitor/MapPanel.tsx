@@ -14,6 +14,8 @@ import { aircraftPoints, areas, boundsKey, coloredTracks, coveredByDrone, suchla
 interface Props {
   lat: number;
   lon: number;
+  /** Zoomstufe ohne Einsatz, eingestellt in der Suite. */
+  zoom: number;
   offline: boolean;
   band: Warning[];
   listed: Warning[];
@@ -43,6 +45,7 @@ type Data = Parameters<GeoJSONSource['setData']>[0];
 export default function MapPanel({
   lat,
   lon,
+  zoom,
   offline,
   band,
   listed,
@@ -60,7 +63,7 @@ export default function MapPanel({
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
-  // Neu erzeugt nur bei Theme, Kartenquelle oder Standort, nicht bei jedem Datenstand.
+  // Neu erzeugt nur bei Theme, Kartenquelle, Standort oder Zoomstufe, nicht bei jedem Datenstand.
   useEffect(() => {
     const f = effektiv === 'dark' ? farbenDunkel : farbenHell;
     const kindColor: ExpressionSpecification = ['match', ['get', 'kind'], 'band', f.alarm, f.achtung];
@@ -68,7 +71,7 @@ export default function MapPanel({
       container: container.current!,
       style: basemapStyle(effektiv, { offline }),
       center: [lon, lat],
-      zoom: 9,
+      zoom,
       attributionControl: { compact: false },
     });
     // `style.load` statt `load`: `load` wartet auf die ersten Kacheln, und die hängen ohne Netz.
@@ -174,7 +177,7 @@ export default function MapPanel({
       setMap(null);
       m.remove();
     };
-  }, [effektiv, offline, lat, lon]);
+  }, [effektiv, offline, lat, lon, zoom]);
 
   // `!map?.style`: Wechselt Theme, Kartenquelle oder Standort, entfernt der Effekt oben die alte Karte
   // (`remove()` löscht `style`), bevor `setMap(null)` ankommt. Die Effekte unten laufen im selben
@@ -221,10 +224,10 @@ export default function MapPanel({
     const right = droneOpen ? Math.round(map.getContainer().clientWidth * coveredByDrone(sideColumn)) : 0;
     const padding = { top: 50, bottom: 50, left: 50, right: right + 50 };
     if (bounds) map.fitBounds(bounds, { padding, maxZoom: 15, duration: 1200 });
-    else map.easeTo({ center: [lon, lat], zoom: 9, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
+    else map.easeTo({ center: [lon, lat], zoom, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
     // `bounds` steckt in `key`; ein neues Array je Abfrage soll nicht neu einpassen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, key, droneOpen, sideColumn, lat, lon]);
+  }, [map, key, droneOpen, sideColumn, lat, lon, zoom]);
 
   return (
     <section className="lm-paneel lm-karte">

@@ -150,6 +150,7 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
         warnings: sourced::<Vec<Warning>>(&state, &nina_key, NINA_STALE_MS, now_ms).await,
         map: MapInfo {
             offline: state.tiles.is_some(),
+            zoom: cfg.map_zoom,
         },
         modules: cfg.modules,
         config,

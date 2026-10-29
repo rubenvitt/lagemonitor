@@ -74,6 +74,7 @@ export default function MonitorPage() {
           <MapPanel
             lat={location.lat}
             lon={location.lon}
+            zoom={view.map.zoom}
             offline={view.map.offline}
             band={modules.warningAreas ? layout.band : []}
             listed={modules.warningAreas ? layout.listed : []}

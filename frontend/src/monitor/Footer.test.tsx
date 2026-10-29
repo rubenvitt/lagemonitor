@@ -18,7 +18,7 @@ test('shows_stale', () => {
 });
 
 test('frischer Stand ohne Kartenquelle', () => {
-  render(<Footer view={makeView({ map: { offline: true } })} />);
+  render(<Footer view={makeView({ map: { offline: true, zoom: 9 } })} />);
   expect(screen.getByText(/^DWD\/NINA · Stand \d\d:\d\d$/)).toBeInTheDocument();
   expect(screen.queryByText(/^Karte /)).toBeNull();
   expect(screen.queryByText(/Veraltet/)).toBeNull();
