@@ -119,7 +119,7 @@ const QR = { url: 'https://drk.example.org/mitmachen', text: 'Lust mitzuhelfen?'
 test('Meldung aus der Suite steht als Band, mit Countdown', () => {
   const now = Date.now();
   answer({
-    data: makeView({ nowMs: now, notices: [{ id: 'n1', text: 'Nächste Lagebesprechung', countdownToMs: now + 42 * 60_000, expiresAtMs: now + 3_600_000 }] }),
+    data: makeView({ nowMs: now, notices: [{ id: 'n1', text: 'Nächste Lagebesprechung', countdownToMs: now + 42 * 60_000, expiresAtMs: now + 3_600_000, category: null }] }),
     dataUpdatedAt: now,
   });
   render(<MonitorPage />);
