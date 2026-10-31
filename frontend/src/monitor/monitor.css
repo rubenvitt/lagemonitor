@@ -327,17 +327,53 @@
   flex-direction: column;
   gap: 1px;
 }
+/* ── Meldekategorien ──────────────────────────────────────────────────────
+   Die Farbe einer Kategorie kommt als Schlüssel (`data-farbe`, `NoticeColor`), nie als Farbwert: jeder
+   Schlüssel hat hier einen Ton für Tag und einen für Nacht, abgestimmt wie `--lfh-bedien` (Kante und
+   Kürzel) und `--lfh-bedien-flaeche` (Band). Ohne Kategorie gilt Blau, wie vorher. Rot gibt es nicht:
+   es gehört den Warnungen. Die Töne für Tag stehen auch in der Suite (`kategorieRegeln.ts`, `FARBEN`). */
+.lm-meldung { --lm-kat: var(--lfh-bedien); --lm-kat-flaeche: var(--lfh-bedien-flaeche); --lm-kat-auf: var(--lfh-auf-bedien); }
+.lm-meldung[data-farbe='teal'] { --lm-kat: #0b6a6a; --lm-kat-flaeche: #dff1f0; }
+.lm-meldung[data-farbe='green'] { --lm-kat: #1c6640; --lm-kat-flaeche: #e3f1e8; }
+.lm-meldung[data-farbe='ochre'] { --lm-kat: #7a5200; --lm-kat-flaeche: #f7efd5; }
+.lm-meldung[data-farbe='orange'] { --lm-kat: #a34700; --lm-kat-flaeche: #fbe9dc; }
+.lm-meldung[data-farbe='purple'] { --lm-kat: #5b3a9e; --lm-kat-flaeche: #ece6f6; }
+.lm-meldung[data-farbe='grey'] { --lm-kat: #4a525b; --lm-kat-flaeche: #eceef0; }
+[data-theme='dark'] .lm-meldung[data-farbe='teal'] { --lm-kat: #2fb8b1; --lm-kat-flaeche: #0b1c1c; }
+[data-theme='dark'] .lm-meldung[data-farbe='green'] { --lm-kat: #5cbf7a; --lm-kat-flaeche: #0e1a12; }
+[data-theme='dark'] .lm-meldung[data-farbe='ochre'] { --lm-kat: #e8cc3a; --lm-kat-flaeche: #1c180a; }
+[data-theme='dark'] .lm-meldung[data-farbe='orange'] { --lm-kat: #f29a4a; --lm-kat-flaeche: #1f140a; }
+[data-theme='dark'] .lm-meldung[data-farbe='purple'] { --lm-kat: #b07cff; --lm-kat-flaeche: #17122a; }
+[data-theme='dark'] .lm-meldung[data-farbe='grey'] { --lm-kat: #9aa2ab; --lm-kat-flaeche: #15181c; }
+
 .lm-meldung {
-  background: var(--lfh-bedien-flaeche);
-  border-left: 8px solid var(--lfh-bedien);
+  background: var(--lm-kat-flaeche);
+  border-left: 8px solid var(--lm-kat);
   display: flex;
   align-items: center;
   gap: 24px;
   padding: 10px 22px 10px 14px;
 }
+/* Fällig (`isDue` in `countdown.ts`): das Band blinkt hart im Sekundentakt, kein weiches Pulsieren,
+   das auf drei Meter wie Flimmern aussieht. Ohne Bewegung steht es kräftig eingefärbt. */
+.lm-meldung[data-faellig='true'] {
+  animation: lm-meldung-faellig 1.2s steps(1, end) infinite;
+}
+@keyframes lm-meldung-faellig {
+  50% { background: color-mix(in srgb, var(--lm-kat) 32%, var(--lm-kat-flaeche)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lm-meldung[data-faellig='true'] {
+    animation: none;
+    background: color-mix(in srgb, var(--lm-kat) 32%, var(--lm-kat-flaeche));
+  }
+}
 .lm-meldung-kuerzel {
-  background: var(--lfh-bedien);
-  color: var(--lfh-auf-bedien);
+  background: var(--lm-kat);
+  color: var(--lm-kat-auf);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 3px 10px;
   font-size: 14px;
   font-weight: 600;
@@ -359,8 +395,14 @@
   font-variant-numeric: tabular-nums;
   font-size: 28px;
   font-weight: 600;
-  color: var(--lfh-bedien-text);
+  color: var(--lfh-text);
   white-space: nowrap;
+}
+.lm-meldung-zeichen {
+  inline-size: 20px;
+  block-size: 20px;
+  flex: none;
+  fill: currentColor;
 }
 
 /* ── QR-Code fürs Ehrenamt ────────────────────────────────────────────────

@@ -146,6 +146,7 @@ async fn get<T: DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{NoticeCategory, NoticeColor, NoticeIcon};
 
     #[tokio::test]
     async fn defaults_when_table_empty() {
@@ -181,6 +182,15 @@ mod tests {
             text: "Nächste Lagebesprechung".into(),
             countdown_to_ms: Some(1_800_000_000_000),
             expires_at_ms: 1_800_000_600_000,
+            category: Some(NoticeCategory {
+                name: "Besprechung".into(),
+                color: NoticeColor::Purple,
+                icon: Some(NoticeIcon {
+                    view_box: "0 0 48 48".into(),
+                    paths: vec!["M14 4z".into()],
+                }),
+                alert_lead_minutes: Some(10),
+            }),
         }];
         s.recruitment = Some(Recruitment {
             url: "https://drk.example.org/mitmachen".into(),

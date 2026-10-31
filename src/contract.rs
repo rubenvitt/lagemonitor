@@ -249,6 +249,47 @@ pub struct Notice {
     pub countdown_to_ms: Option<i64>,
     #[ts(type = "number")]
     pub expires_at_ms: i64,
+    /// Kategorie aus der Suite, etwa „Besprechung“; `null` bei einer Suite ohne Kategorien oder
+    /// einer Meldung ohne. Gespeicherte Meldungen von vor den Kategorien haben das Feld nicht.
+    #[serde(default)]
+    pub category: Option<NoticeCategory>,
+}
+
+/// Eine Meldekategorie: Name, Farbe aus der festen Palette, Zeichen als Pfaddaten (Icons8, aus dem
+/// Katalog der Suite) und ab wie vielen Minuten vor `countdownToMs` die Meldung blinkt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct NoticeCategory {
+    pub name: String,
+    pub color: NoticeColor,
+    /// `null`, wenn die Suite kein brauchbares Zeichen geschickt hat; der Name steht trotzdem.
+    pub icon: Option<NoticeIcon>,
+    /// `null`: blinkt nie.
+    pub alert_lead_minutes: Option<u32>,
+}
+
+/// Die Palette der Kategorien. Nur Schlüssel, keine Farbwerte: die Töne für Tag und Nacht stehen
+/// in `frontend/src/monitor/monitor.css`. Rot fehlt mit Absicht, es gehört den Warnungen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub enum NoticeColor {
+    Blue,
+    Teal,
+    Green,
+    Ochre,
+    Orange,
+    Purple,
+    Grey,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct NoticeIcon {
+    pub view_box: String,
+    pub paths: Vec<String>,
 }
 
 /// QR-Code fürs Ehrenamt: wohin er führt und der Satz daneben. Nur `https://`.
