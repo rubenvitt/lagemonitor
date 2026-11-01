@@ -7,8 +7,8 @@ use serde::de::DeserializeOwned;
 
 use crate::app::AppState;
 use crate::contract::{
-    ConfigState, MapInfo, MonitorView, Sourced, SpeedCamera, SuchlageView, TrafficIncident,
-    TrafficView, Warning, Weather,
+    ConfigState, MapInfo, MonitorView, NOTICES_VISIBLE_MAX, Sourced, SpeedCamera, SuchlageView,
+    TrafficIncident, TrafficView, Warning, Weather,
 };
 use crate::error::AppError;
 use crate::{poller, settings, store};
@@ -155,11 +155,13 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
         modules: cfg.modules,
         config,
         suchlage,
-        // Abgelaufenes geht nicht hinaus, auch wenn die Suite länger nicht erreichbar war.
+        // Abgelaufenes geht nicht hinaus, auch wenn die Suite länger nicht erreichbar war; Geplantes erst ab
+        // seinem Beginn. Die Suite schickt in der Reihenfolge, in der die Meldungen am Band stehen sollen.
         notices: cfg
             .notices
             .into_iter()
-            .filter(|n| n.expires_at_ms > now_ms)
+            .filter(|n| n.is_shown(now_ms))
+            .take(NOTICES_VISIBLE_MAX)
             .collect(),
         recruitment: cfg.recruitment,
         traffic,

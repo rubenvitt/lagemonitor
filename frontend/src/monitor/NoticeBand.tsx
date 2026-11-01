@@ -5,10 +5,14 @@ import { countdownText, isDue } from './countdown';
  * Meldungen aus der IUK-Suite, etwa „Besprechung · Nächste Lagebesprechung · in 42 min“. Vorn die
  * Kategorie mit Zeichen und Farbe (ohne Kategorie „Meldung“ in Blau); kurz vor der Uhrzeit blinkt das
  * Band. Kein Alarmrot; eine abgelaufene Meldung fällt mit der Uhr der Oberfläche weg, nicht erst mit
- * dem Server.
+ * dem Server, und eine geplante erscheint mit ihr pünktlich. Höchstens drei untereinander, in der
+ * Reihenfolge der Suite; eine weitere rückt nach, wenn eine abläuft.
  */
+const VISIBLE_MAX = 3;
 export default function NoticeBand({ notices, nowMs }: { notices: Notice[]; nowMs: number }) {
-  const running = notices.filter((n) => n.expiresAtMs > nowMs);
+  const running = notices
+    .filter((n) => (n.showFromMs ?? nowMs) <= nowMs && n.expiresAtMs > nowMs)
+    .slice(0, VISIBLE_MAX);
   if (running.length === 0) return null;
   return (
     <section className="lm-meldungen" aria-label="Meldungen">
