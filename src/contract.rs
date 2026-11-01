@@ -237,7 +237,7 @@ pub struct SuchlageView {
 }
 
 /// Eine Meldung fürs Band aus der IUK-Suite, etwa „Nächste Lagebesprechung“. Jede läuft ab; der
-/// Server gibt nur laufende heraus, die Oberfläche prüft den Ablauf mit ihrer Uhr noch einmal.
+/// Server gibt nur laufende heraus, die Oberfläche prüft Beginn und Ablauf mit ihrer Uhr noch einmal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../frontend/src/contract/")]
@@ -249,10 +249,25 @@ pub struct Notice {
     pub countdown_to_ms: Option<i64>,
     #[ts(type = "number")]
     pub expires_at_ms: i64,
+    /// Ab wann die Meldung am Band steht; `null` sofort. Die Suite schickt geplante Meldungen ein paar
+    /// Minuten vorher, damit sie pünktlich erscheinen. Gespeicherte Meldungen von davor haben das Feld nicht.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub show_from_ms: Option<i64>,
     /// Kategorie aus der Suite, etwa „Besprechung“; `null` bei einer Suite ohne Kategorien oder
     /// einer Meldung ohne. Gespeicherte Meldungen von vor den Kategorien haben das Feld nicht.
     #[serde(default)]
     pub category: Option<NoticeCategory>,
+}
+
+/// So viele Meldungen stehen höchstens untereinander am Band; die Suite plant mehr, die übrigen warten.
+pub const NOTICES_VISIBLE_MAX: usize = 3;
+
+impl Notice {
+    /// Steht die Meldung zum Zeitpunkt `now_ms` am Band: begonnen und nicht abgelaufen.
+    pub fn is_shown(&self, now_ms: i64) -> bool {
+        self.show_from_ms.is_none_or(|t| t <= now_ms) && self.expires_at_ms > now_ms
+    }
 }
 
 /// Eine Meldekategorie: Name, Farbe aus der festen Palette, Zeichen als Pfaddaten (Icons8, aus dem
@@ -376,4 +391,37 @@ pub struct MonitorView {
     /// `null`: kein QR-Code fürs Ehrenamt.
     pub recruitment: Option<Recruitment>,
     pub traffic: TrafficView,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn notice(show_from_ms: Option<i64>, expires_at_ms: i64) -> Notice {
+        Notice {
+            id: "n".into(),
+            text: "Lage".into(),
+            countdown_to_ms: None,
+            expires_at_ms,
+            show_from_ms,
+            category: None,
+        }
+    }
+
+    #[test]
+    fn a_notice_is_shown_from_its_start_until_it_expires() {
+        assert!(notice(None, 100).is_shown(99));
+        assert!(!notice(None, 100).is_shown(100));
+        assert!(!notice(Some(50), 100).is_shown(49));
+        assert!(notice(Some(50), 100).is_shown(50));
+    }
+
+    #[test]
+    fn stored_notices_without_a_start_still_load() {
+        let n: Notice = serde_json::from_str(
+            r#"{"id":"n","text":"Lage","countdownToMs":null,"expiresAtMs":1}"#,
+        )
+        .unwrap();
+        assert_eq!(n.show_from_ms, None);
+    }
 }

@@ -182,6 +182,7 @@ mod tests {
             text: "Nächste Lagebesprechung".into(),
             countdown_to_ms: Some(1_800_000_000_000),
             expires_at_ms: 1_800_000_600_000,
+            show_from_ms: Some(1_799_999_700_000),
             category: Some(NoticeCategory {
                 name: "Besprechung".into(),
                 color: NoticeColor::Purple,

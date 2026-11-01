@@ -9,6 +9,7 @@ const notice = (id: string, extra: Partial<Notice> = {}): Notice => ({
   text: `Meldung ${id}`,
   countdownToMs: null,
   expiresAtMs: now + 3_600_000,
+  showFromMs: null,
   category: null,
   ...extra,
 });
@@ -28,6 +29,22 @@ describe('NoticeBand', () => {
       <NoticeBand notices={[notice('a', { expiresAtMs: now - 1 })]} nowMs={now} />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('zeigt Geplantes erst ab seinem Beginn und höchstens drei', () => {
+    const notices = [
+      notice('a'),
+      notice('b', { showFromMs: now + 60_000 }),
+      notice('c'),
+      notice('d'),
+      notice('e'),
+    ];
+    const texte = (nowMs: number) =>
+      Array.from(
+        render(<NoticeBand notices={notices} nowMs={nowMs} />).container.querySelectorAll('.lm-meldung-text'),
+      ).map((e) => e.textContent);
+    expect(texte(now)).toEqual(['Meldung a', 'Meldung c', 'Meldung d']);
+    expect(texte(now + 60_000)).toEqual(['Meldung a', 'Meldung b', 'Meldung c']);
   });
 
   it('zeigt die Kategorie mit Zeichen und Farbe, ohne Kategorie „Meldung“ in Blau', () => {
@@ -62,13 +79,16 @@ describe('NoticeBand', () => {
           notice('bald', { countdownToMs: now + 4 * 60_000, category: category(5) }),
           notice('spaeter', { countdownToMs: now + 6 * 60_000, category: category(5) }),
           notice('nie', { countdownToMs: now + 60_000, category: category(null) }),
-          notice('ohne', { countdownToMs: now + 60_000 }),
         ]}
         nowMs={now}
       />,
     );
     expect([...container.querySelectorAll('.lm-meldung')].map((e) => e.getAttribute('data-faellig'))).toEqual(
-      ['true', 'false', 'false', 'false'],
+      ['true', 'false', 'false'],
     );
+    const ohne = render(
+      <NoticeBand notices={[notice('ohne', { countdownToMs: now + 60_000 })]} nowMs={now} />,
+    );
+    expect(ohne.container.querySelector('.lm-meldung')).toHaveAttribute('data-faellig', 'false');
   });
 });

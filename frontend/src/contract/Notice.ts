@@ -3,13 +3,18 @@ import type { NoticeCategory } from "./NoticeCategory";
 
 /**
  * Eine Meldung fürs Band aus der IUK-Suite, etwa „Nächste Lagebesprechung“. Jede läuft ab; der
- * Server gibt nur laufende heraus, die Oberfläche prüft den Ablauf mit ihrer Uhr noch einmal.
+ * Server gibt nur laufende heraus, die Oberfläche prüft Beginn und Ablauf mit ihrer Uhr noch einmal.
  */
 export type Notice = { id: string, text: string, 
 /**
  * Bis wann heruntergezählt wird („in 42 min“); `null` ohne Countdown.
  */
 countdownToMs: number | null, expiresAtMs: number, 
+/**
+ * Ab wann die Meldung am Band steht; `null` sofort. Die Suite schickt geplante Meldungen ein paar
+ * Minuten vorher, damit sie pünktlich erscheinen. Gespeicherte Meldungen von davor haben das Feld nicht.
+ */
+showFromMs: number | null, 
 /**
  * Kategorie aus der Suite, etwa „Besprechung“; `null` bei einer Suite ohne Kategorien oder
  * einer Meldung ohne. Gespeicherte Meldungen von vor den Kategorien haben das Feld nicht.

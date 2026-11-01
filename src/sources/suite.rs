@@ -62,6 +62,9 @@ struct RawNotice {
     text: String,
     countdown_to: Option<String>,
     expires_at: String,
+    /// Seit den planbaren Meldungen; eine Suite ohne sie schickt nur, was schon läuft.
+    #[serde(default)]
+    show_from: Option<String>,
     /// Seit den Meldekategorien; eine Suite ohne sie schickt das Feld nicht.
     #[serde(default)]
     category: Option<RawCategory>,
@@ -152,6 +155,7 @@ fn notice(raw: RawNotice) -> Result<Notice, SourceError> {
     Ok(Notice {
         countdown_to_ms: raw.countdown_to.as_deref().map(ms).transpose()?,
         expires_at_ms: ms(&raw.expires_at)?,
+        show_from_ms: raw.show_from.as_deref().map(ms).transpose()?,
         id: raw.id,
         text: raw.text,
         category: raw.category.and_then(category),
@@ -260,7 +264,7 @@ pub(crate) mod tests {
     fn notices_and_recruitment_are_read() {
         let body = EXAMPLE.replace(
             "\"suchlage\": {",
-            r#""notices": [{ "id": "n1", "text": "Nächste Lagebesprechung", "countdownTo": "2026-10-27T13:30:00.000Z", "expiresAt": "2026-10-28T12:00:00.000Z" },
+            r#""notices": [{ "id": "n1", "text": "Nächste Lagebesprechung", "countdownTo": "2026-10-27T13:30:00.000Z", "expiresAt": "2026-10-28T12:00:00.000Z", "showFrom": "2026-10-27T13:00:00.000Z" },
                            { "id": "n2", "text": "Funk Kanal 34", "countdownTo": null, "expiresAt": "2026-10-28T12:00:00.000Z" }],
                "recruitment": { "url": "https://drk.example.org/mitmachen", "text": "Lust mitzuhelfen?" },
                "suchlage": {"#,
@@ -269,7 +273,9 @@ pub(crate) mod tests {
         assert_eq!(s.notices.len(), 2);
         assert_eq!(s.notices[0].countdown_to_ms, Some(1_793_107_800_000));
         assert_eq!(s.notices[0].expires_at_ms, 1_793_188_800_000);
+        assert_eq!(s.notices[0].show_from_ms, Some(1_793_106_000_000));
         assert_eq!(s.notices[1].countdown_to_ms, None);
+        assert_eq!(s.notices[1].show_from_ms, None);
         assert_eq!(s.recruitment.unwrap().text, "Lust mitzuhelfen?");
     }
 
