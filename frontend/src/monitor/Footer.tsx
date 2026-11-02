@@ -29,6 +29,17 @@ function gpsState({ gps }: MonitorView): { text: string; alert: boolean } | null
   return { text: `Standort GPS · ${at}`, alert: false };
 }
 
+/** Verkehr nur, wenn eine Ebene an ist. Ein Fehler fällt auf, der Stand der Baustellen steht dabei. */
+function trafficState({ traffic }: MonitorView): { text: string; alert: boolean } | null {
+  const { flow, flowError, incidents, speedCameras } = traffic;
+  if (!flow && !incidents && !speedCameras) return null;
+  if (flowError !== null || incidents?.error) return { text: 'Verkehr: TomTom nicht abrufbar', alert: true };
+  if (speedCameras?.error) return { text: 'Blitzer: OpenStreetMap nicht abrufbar', alert: true };
+  const at = incidents?.fetchedAtMs;
+  const sources = [(flow || incidents) && 'TomTom', speedCameras && 'OSM'].filter(Boolean).join('/');
+  return { text: at ? `Verkehr ${sources} · Stand ${clock(at)}` : `Verkehr ${sources}`, alert: false };
+}
+
 /** Woher die Einstellungen stammen; scheitert die Abholung, gilt der letzte Stand und das steht da. */
 function configState({ config }: MonitorView): { text: string; alert: boolean } | null {
   if (!config.fromSuite) return null;
@@ -38,7 +49,7 @@ function configState({ config }: MonitorView): { text: string; alert: boolean } 
 }
 
 export default function Footer({ view }: { view?: MonitorView }) {
-  const states = view ? [dataState(view), gpsState(view), suchlageState(view), configState(view)] : [];
+  const states = view ? [dataState(view), gpsState(view), suchlageState(view), trafficState(view), configState(view)] : [];
   return (
     <footer className="lm-fuss" data-theme="dark">
       {states.map(

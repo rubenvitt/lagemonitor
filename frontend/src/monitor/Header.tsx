@@ -22,8 +22,8 @@ function status(layout: Layout, fetchedAtMs: number | null, einsatz: string | nu
   if (warnState === 'stale') {
     return { text: `Warnstand veraltet · ${fetchedAtMs === null ? '–' : clock(fetchedAtMs)}`, tone: 'achtung' };
   }
-  if (listed.length > 0) return { text: `RUHE · ${plural(listed.length, 'Warnung', 'Warnungen')} unter Schwelle`, tone: 'normal' };
-  return { text: 'RUHE · keine Warnungen', tone: 'normal' };
+  if (listed.length > 0) return { text: `${plural(listed.length, 'Warnung', 'Warnungen')} unter Schwelle`, tone: 'normal' };
+  return { text: 'keine Warnungen', tone: 'normal' };
 }
 
 interface Props {

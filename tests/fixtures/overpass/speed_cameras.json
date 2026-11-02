@@ -1,0 +1,9 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API",
+  "elements": [
+    { "type": "node", "id": 2465880131, "lat": 52.9712, "lon": 10.5489, "tags": { "highway": "speed_camera", "maxspeed": "50" } },
+    { "type": "node", "id": 5012345678, "lat": 52.9401, "lon": 10.6022, "tags": { "highway": "speed_camera" } },
+    { "type": "node", "id": 1, "lat": 99.0, "lon": 10.0, "tags": { "highway": "speed_camera" } }
+  ]
+}

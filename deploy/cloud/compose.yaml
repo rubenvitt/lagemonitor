@@ -1,0 +1,40 @@
+# Online-Instanz des Lagemonitors neben der IUK-Suite (Server iuk-services, Traefik hinter dem
+# Cloudflare Tunnel). Derselbe Code wie im FüKw, nur andere Umgebung: kein Listener ohne Anmeldung,
+# jeder Zugriff braucht Pocket ID oder einen Link aus der Suite. Einrichtung: README.md daneben.
+services:
+  lagemonitor:
+    image: ${LAGEMONITOR_IMAGE:-ghcr.io/rubenvitt/lagemonitor:latest}
+    restart: unless-stopped
+    networks: [proxy]
+    environment:
+      # Kein Kiosk, kein Fahrzeugnetz: ausdrücklich leer.
+      LAGEMONITOR_BIND: ""
+      # Im Container auf allen Adressen, aber nur mit Anmeldung. Kein Port am Host, nur Traefik.
+      LAGEMONITOR_AUTH_BIND: 0.0.0.0:8080
+      LAGEMONITOR_PUBLIC_URL: ${LAGEMONITOR_PUBLIC_URL:?LAGEMONITOR_PUBLIC_URL fehlt – siehe .env}
+      LAGEMONITOR_OIDC_ISSUER: ${LAGEMONITOR_OIDC_ISSUER:?LAGEMONITOR_OIDC_ISSUER fehlt – siehe .env}
+      LAGEMONITOR_OIDC_CLIENT_ID: ${LAGEMONITOR_OIDC_CLIENT_ID:?LAGEMONITOR_OIDC_CLIENT_ID fehlt – siehe .env}
+      LAGEMONITOR_OIDC_CLIENT_SECRET: ${LAGEMONITOR_OIDC_CLIENT_SECRET:?LAGEMONITOR_OIDC_CLIENT_SECRET fehlt – siehe .env}
+      LAGEMONITOR_OIDC_GROUPS: ${LAGEMONITOR_OIDC_GROUPS:-lagemonitor-nutzer,lagemonitor-admin}
+      LAGEMONITOR_SUITE_URL: ${LAGEMONITOR_SUITE_URL:?LAGEMONITOR_SUITE_URL fehlt – siehe .env}
+      LAGEMONITOR_SUITE_TOKEN: ${LAGEMONITOR_SUITE_TOKEN:?LAGEMONITOR_SUITE_TOKEN fehlt – siehe .env}
+    volumes:
+      - ./data:/data
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      # Der Monitor hängt unter /monitor auf dem Host der Suite-Verwaltung. Traefik gewichtet Regeln
+      # sonst nach Länge, und die Regel der Suite (alle Hosts) ist länger: daher die feste Priorität.
+      - traefik.http.routers.lagemonitor-online.rule=Host(`${LAGEMONITOR_HOST:-lagemonitor.iuk-ue.de}`) && PathPrefix(`/monitor`)
+      - traefik.http.routers.lagemonitor-online.priority=10000
+      - traefik.http.routers.lagemonitor-online.entrypoints=web
+      - traefik.http.routers.lagemonitor-online.middlewares=lagemonitor-online-slash,lagemonitor-online-strip
+      # /monitor ohne Schrägstrich: Die Oberfläche lädt alles relativ, also erst auf /monitor/.
+      - traefik.http.middlewares.lagemonitor-online-slash.redirectregex.regex=^(https?://[^/]+/monitor)$$
+      - traefik.http.middlewares.lagemonitor-online-slash.redirectregex.replacement=$${1}/
+      - traefik.http.middlewares.lagemonitor-online-strip.stripprefix.prefixes=/monitor
+      - traefik.http.services.lagemonitor-online.loadbalancer.server.port=8080
+
+networks:
+  proxy:
+    external: true

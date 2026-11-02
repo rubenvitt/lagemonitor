@@ -2,22 +2,33 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Map as MapLibreMap, type ExpressionSpecification, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
 import '../map/maplibreWorker';
 import { basemapStyle } from '../map/basemapStyle';
+import type { SpeedCamera } from '../contract/SpeedCamera';
 import type { SuchlageView } from '../contract/SuchlageView';
+import type { TrafficIncident } from '../contract/TrafficIncident';
 import type { Warning } from '../contract/Warning';
 import { useThemeMode } from '../theme/ThemeModeProvider';
 import { farbenDunkel, farbenHell } from '../theme/tokens';
-import { radarTiles, warningAreas } from './mapData';
+import { incidentFeatures, radarTiles, speedCameraFeatures, trafficTiles, warningAreas } from './mapData';
 import { aircraftPoints, areas, boundsKey, coloredTracks, coveredByDrone, suchlageBounds } from './suchlageData';
 
 interface Props {
   lat: number;
   lon: number;
-  label: string;
+  /** Zoomstufe ohne Einsatz, eingestellt in der Suite. */
+  zoom: number;
   offline: boolean;
   band: Warning[];
   listed: Warning[];
   /** Stand des Wetters; `null` blendet das Radar aus (veraltet oder nie geladen). */
   radarAt: number | null;
+  /** Verkehrsfluss von TomTom zeigen. */
+  trafficFlow: boolean;
+  /** Serverzeit; bestimmt den Stand der Verkehrskacheln. */
+  nowMs: number;
+  /** Baustellen und Sperrungen; leer, wenn aus. */
+  incidents: TrafficIncident[];
+  /** Feste Blitzer (nur online); leer, wenn aus. */
+  speedCameras: SpeedCamera[];
   /** Laufender Suchlage-Einsatz; `null` ohne Einsatz oder mit Modul aus. */
   suchlage: SuchlageView | null;
   /** Das Drohnenbild ist eingefahren und verdeckt den rechten Rand. */
@@ -31,7 +42,23 @@ interface Props {
 type Data = Parameters<GeoJSONSource['setData']>[0];
 
 /** Dünne Hülle um maplibre (läuft nicht in jsdom); die Logik steckt in `mapData.ts`. */
-export default function MapPanel({ lat, lon, label, offline, band, listed, radarAt, suchlage, droneOpen, sideColumn, children }: Props) {
+export default function MapPanel({
+  lat,
+  lon,
+  zoom,
+  offline,
+  band,
+  listed,
+  radarAt,
+  trafficFlow,
+  nowMs,
+  incidents,
+  speedCameras,
+  suchlage,
+  droneOpen,
+  sideColumn,
+  children,
+}: Props) {
   const { effektiv } = useThemeMode();
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MapLibreMap | null>(null);
@@ -41,7 +68,7 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
     start.current = { lat, lon };
   }, [lat, lon]);
 
-  // Neu erzeugt nur bei Theme oder Kartenquelle, nicht bei jedem Datenstand.
+  // Neu erzeugt nur bei Theme, Kartenquelle oder Zoomstufe, nicht bei jedem Datenstand.
   useEffect(() => {
     const { lat, lon } = start.current;
     const f = effektiv === 'dark' ? farbenDunkel : farbenHell;
@@ -50,11 +77,14 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
       container: container.current!,
       style: basemapStyle(effektiv, { offline }),
       center: [lon, lat],
-      zoom: 9,
+      zoom,
       attributionControl: { compact: false },
     });
     // `style.load` statt `load`: `load` wartet auf die ersten Kacheln, und die hängen ohne Netz.
     m.once('style.load', () => {
+      // Verkehrsfluss ganz unten: Regen, Warnungen und Einsatz liegen darüber.
+      m.addSource('verkehr', { type: 'raster', tiles: [trafficTiles(effektiv === 'dark', 0)], tileSize: 256, maxzoom: 18, attribution: '© TomTom' });
+      m.addLayer({ id: 'verkehr', type: 'raster', source: 'verkehr', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.8 } });
       m.addSource('radar', { type: 'raster', tiles: [radarTiles(0)], tileSize: 256, attribution: '© DWD' });
       m.addSource('warngebiete', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       m.addSource('standort', {
@@ -68,6 +98,53 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
         type: 'line',
         source: 'warngebiete',
         paint: { 'line-color': kindColor, 'line-width': 2, 'line-dasharray': [3, 2] },
+      });
+      // Baustellen und Blitzer neutral (Text- und Grundfarbe): Rot und Gelb gehören den Warnungen,
+      // Blau dem Standort und Suchlage. Eine Baustelle ist eine gestreifte Linie, eine Sperrung breiter.
+      m.addSource('baustellen', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      m.addSource('blitzer', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        attribution: 'Blitzer © OpenStreetMap-Mitwirkende',
+      });
+      const closed: ExpressionSpecification = ['==', ['get', 'kind'], 'roadClosed'];
+      const line: ExpressionSpecification = ['==', ['geometry-type'], 'LineString'];
+      m.addLayer({
+        id: 'baustellen-grund',
+        type: 'line',
+        source: 'baustellen',
+        filter: line,
+        layout: { 'line-cap': 'butt' },
+        paint: { 'line-color': f.grund, 'line-width': ['case', closed, 8, 6] },
+      });
+      m.addLayer({
+        id: 'baustellen-streifen',
+        type: 'line',
+        source: 'baustellen',
+        filter: line,
+        layout: { 'line-cap': 'butt' },
+        paint: { 'line-color': f.text, 'line-width': ['case', closed, 5, 3], 'line-dasharray': [1.2, 1.2] },
+      });
+      m.addLayer({
+        id: 'baustellen-punkt',
+        type: 'circle',
+        source: 'baustellen',
+        filter: ['!', line],
+        paint: { 'circle-radius': 6, 'circle-color': f.text, 'circle-stroke-color': f.grund, 'circle-stroke-width': 3 },
+      });
+      m.addLayer({
+        id: 'blitzer',
+        type: 'circle',
+        source: 'blitzer',
+        paint: { 'circle-radius': 7, 'circle-color': f.grund, 'circle-stroke-color': f.text, 'circle-stroke-width': 2.5 },
+      });
+      m.addLayer({
+        id: 'blitzer-tempo',
+        type: 'symbol',
+        source: 'blitzer',
+        minzoom: 11,
+        layout: { 'text-field': ['get', 'maxspeed'], 'text-size': 12, 'text-offset': [0, 1.3], 'text-font': ['noto_sans_regular'] },
+        paint: { 'text-color': f.text, 'text-halo-color': f.grund, 'text-halo-width': 2 },
       });
       // Suchlage über den Warngebieten, Drohnen ganz oben.
       for (const id of ['suchgebiete', 'flugspuren', 'drohnen']) {
@@ -106,9 +183,9 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
       setMap(null);
       m.remove();
     };
-  }, [effektiv, offline]);
+  }, [effektiv, offline, zoom]);
 
-  // `!map?.style`: Wechselt Theme oder Kartenquelle, entfernt der Effekt oben die alte Karte
+  // `!map?.style`: Wechselt Theme, Kartenquelle oder Zoomstufe, entfernt der Effekt oben die alte Karte
   // (`remove()` löscht `style`), bevor `setMap(null)` ankommt. Die Effekte unten laufen im selben
   // Commit noch mit ihr, und ein Fehler dort leerte den ganzen Bildschirm (fuekw-server, 28.10.2026).
   useEffect(() => {
@@ -127,6 +204,20 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
     map.setLayoutProperty('radar', 'visibility', radarAt === null ? 'none' : 'visible');
   }, [map, radarAt]);
 
+  const dark = effektiv === 'dark';
+  const flowTiles = trafficFlow ? trafficTiles(dark, nowMs) : null;
+  useEffect(() => {
+    if (!map?.style) return;
+    if (flowTiles !== null) map.getSource<RasterTileSource>('verkehr')?.setTiles([flowTiles]);
+    map.setLayoutProperty('verkehr', 'visibility', flowTiles === null ? 'none' : 'visible');
+  }, [map, flowTiles]);
+
+  useEffect(() => {
+    if (!map?.style) return;
+    map.getSource<GeoJSONSource>('baustellen')?.setData(incidentFeatures(incidents) as Data);
+    map.getSource<GeoJSONSource>('blitzer')?.setData(speedCameraFeatures(speedCameras) as Data);
+  }, [map, incidents, speedCameras]);
+
   useEffect(() => {
     if (!map?.style) return;
     const empty = { type: 'FeatureCollection', features: [] } as const;
@@ -144,27 +235,16 @@ export default function MapPanel({ lat, lon, label, offline, band, listed, radar
   useEffect(() => {
     if (!map?.style) return;
     const right = droneOpen ? Math.round(map.getContainer().clientWidth * coveredByDrone(sideColumn)) : 0;
-    const padding = { top: 80, bottom: 50, left: 50, right: right + 50 };
+    const padding = { top: 50, bottom: 50, left: 50, right: right + 50 };
     if (bounds) map.fitBounds(bounds, { padding, maxZoom: 15, duration: 1200 });
-    else map.easeTo({ center: [lon, lat], zoom: 9, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
+    else map.easeTo({ center: [lon, lat], zoom, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
     // `bounds` steckt in `key`; ein neues Array je Abfrage soll nicht neu einpassen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, key, droneOpen, sideColumn, centerKey]);
+  }, [map, key, droneOpen, sideColumn, centerKey, zoom]);
 
-  const warnAreas = band.length + listed.length > 0;
-  const hasTracks = suchlage !== null && coloredTracks(suchlage).features.length > 0;
-  const hasSearchAreas = suchlage !== null && areas(suchlage).features.length > 0;
   return (
     <section className="lm-paneel lm-karte">
       <div ref={container} className="lm-karte-flaeche" data-testid="map" />
-      <div className="lm-karte-legende">
-        <div className="lm-augenbraue">
-          {['Standort', warnAreas && 'Warngebiete', radarAt !== null && 'Radar', hasSearchAreas && 'Suchgebiete', hasTracks && 'Flugspuren']
-            .filter(Boolean)
-            .join(' + ')}
-        </div>
-        <div className="lm-zahl">{label}</div>
-      </div>
       {children}
     </section>
   );

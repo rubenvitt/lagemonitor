@@ -37,6 +37,9 @@ const depsOhneSourcemap = (): Plugin => ({
 });
 
 export default defineConfig({
+  // Relativ, damit derselbe Bau an der Wurzel (FüKw) und unter einem Pfad läuft (Online-Instanz
+  // unter /monitor, deploy/cloud/compose.yaml).
+  base: './',
   plugins: [react(), gitkeepBewahren(), depsOhneSourcemap()],
   server: {
     port: 5173,

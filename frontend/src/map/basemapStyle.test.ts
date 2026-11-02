@@ -1,13 +1,14 @@
 // Übernommen aus Suchlage d621418 (27.10.2026): frontend/src/map/basemapStyle.test.ts
-import { basemapStyle } from './basemapStyle';
+import { basemapStyle, offlineTiles } from './basemapStyle';
 
 const ONLINE = { offline: false };
 
 const tileUrls = (offline: boolean) =>
   (basemapStyle('dark', { offline }).sources.basemap as { tiles: string[] }).tiles;
 
-test('offline: Kacheln kommen vom eigenen Backend', () => {
-  expect(tileUrls(true)).toEqual(['/api/tiles/{z}/{x}/{y}']);
+test('offline: Kacheln kommen vom eigenen Backend, auch unter einem Pfad', () => {
+  expect(tileUrls(true)).toEqual([`${window.location.origin}/api/tiles/{z}/{x}/{y}`]);
+  expect(offlineTiles('https://lagemonitor.example/monitor/')).toBe('https://lagemonitor.example/monitor/api/tiles/{z}/{x}/{y}');
 });
 
 test('online: Kacheln kommen von VersaTiles', () => {

@@ -28,8 +28,19 @@ pub struct AppState {
     pub tiles: Option<SqlitePool>,
     /// Letzter Suchlage-Stand. Nur im Speicher: Er altert in Sekunden, nach einem Neustart zählt er nicht.
     pub suchlage: Arc<RwLock<Option<SuchlageSnapshot>>>,
-    /// Für Suite, Suchlage und den Video-Proxy.
+    /// Für Suite, Suchlage, den Video-Proxy und die Anmeldung.
     pub http: reqwest::Client,
+    /// Endpunkte von Pocket ID, beim ersten Anmelden geholt.
+    pub discovery: Arc<RwLock<Option<crate::auth::Discovery>>>,
+    /// Zeitpunkt (ms) des letzten Abrufs, den ein unbekannter Link ausgelöst hat (`auth::link_login`).
+    pub link_refresh_ms: Arc<tokio::sync::Mutex<i64>>,
+    /// Letzter Versuch je Verkehrs-Stand (`poller::poll_traffic`), auch der gescheiterte: Ein Fehler
+    /// darf das Kontingent nicht im Minutentakt aufbrauchen.
+    pub traffic_attempts: Arc<tokio::sync::Mutex<HashMap<String, i64>>>,
+    /// Holt TomTom-Kacheln nacheinander: Zehn Browser auf dieselbe Kachel kosten eine Abfrage.
+    pub traffic_tile_fetch: Arc<tokio::sync::Mutex<()>>,
+    /// Basisadresse von TomTom; Tests setzen einen lokalen Server ein.
+    pub tomtom_base: reqwest::Url,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +73,13 @@ impl AppState {
             tiles,
             suchlage: Arc::default(),
             http: reqwest::Client::new(),
+            discovery: Arc::default(),
+            link_refresh_ms: Arc::default(),
+            traffic_attempts: Arc::default(),
+            traffic_tile_fetch: Arc::default(),
+            tomtom_base: crate::sources::tomtom::TOMTOM_BASE
+                .parse()
+                .expect("gültige Konstante"),
         }
     }
 }
@@ -85,6 +103,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/monitor", get(web::monitor::get))
         .route("/api/tiles/{z}/{x}/{y}", get(web::tiles::get))
         .route(
+            "/api/verkehr/fluss/{theme}/{z}/{x}/{y}",
+            get(web::traffic::flow_tile),
+        )
+        .route(
             "/api/suchlage/video/{gateway_sn}/whep",
             axum::routing::post(web::video::whep),
         )
@@ -93,9 +115,28 @@ pub fn router(state: AppState) -> Router {
             get(web::video::hls),
         )
         .fallback(fallback)
+        .layer(axum::middleware::map_response(static_files::stand_header))
         .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Derselbe Monitor, aber nur nach Anmeldung über Pocket ID (`LAGEMONITOR_AUTH_BIND`).
+pub fn router_with_login(state: AppState) -> Router {
+    let guarded = router(state.clone()).layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        crate::auth::require,
+    ));
+    Router::new()
+        .route("/auth/login", get(crate::auth::login))
+        .route("/auth/callback", get(crate::auth::callback))
+        .route("/auth/logout", get(crate::auth::logout))
+        .route(
+            "/auth/link",
+            get(crate::auth::link_page).post(crate::auth::link_login),
+        )
+        .with_state(state)
+        .merge(guarded)
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -157,6 +198,49 @@ mod tests {
         assert!(json["warnings"]["fetchedAtMs"].is_null());
         assert_eq!(json["warnings"]["stale"], true);
         assert_eq!(json["map"]["offline"], false);
+    }
+
+    #[tokio::test]
+    async fn traffic_layers_follow_settings_and_cameras_stay_off_in_the_vehicle() {
+        let state = test_state(None).await;
+        let json = json_of(
+            router(state.clone())
+                .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(json["traffic"]["flow"], false);
+        assert!(json["traffic"]["incidents"].is_null());
+
+        let mut cfg = crate::settings::load(&state.pool).await.unwrap();
+        cfg.traffic = crate::settings::TrafficLink {
+            tomtom_key: Some("schluessel0123456789".into()),
+            flow: true,
+            incidents: true,
+            speed_cameras: true,
+        };
+        crate::settings::save(&state.pool, &cfg).await.unwrap();
+        let json = json_of(
+            router(state)
+                .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(json["traffic"]["flow"], true);
+        assert_eq!(
+            json["traffic"]["incidents"]["stale"], true,
+            "noch nie abgerufen"
+        );
+        assert!(
+            json["traffic"]["speedCameras"].is_null(),
+            "der Kiosk ist kein Online-Monitor"
+        );
+        assert!(
+            !json.to_string().contains("schluessel0123456789"),
+            "der Schlüssel bleibt auf dem Server"
+        );
     }
 
     #[tokio::test]

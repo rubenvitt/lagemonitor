@@ -4,4 +4,8 @@ export type MapInfo = {
 /**
  * `true`, wenn die Offline-Kacheln (`karte.mbtiles`) geladen sind.
  */
-offline: boolean, };
+offline: boolean, 
+/**
+ * Zoomstufe der Karte ohne Einsatz (um den Standort); eingestellt in der Suite.
+ */
+zoom: number, };

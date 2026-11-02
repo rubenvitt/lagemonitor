@@ -1,7 +1,9 @@
 // Übernommen aus Suchlage d621418 (27.10.2026): src/static_files.rs
 //! Eingebettete SPA (rust-embed).
 
-use axum::http::{StatusCode, Uri, header};
+use std::sync::LazyLock;
+
+use axum::http::{HeaderName, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 
 #[derive(rust_embed::Embed)]
@@ -38,6 +40,44 @@ pub fn resolve(path: &str, exists: impl Fn(&str) -> bool) -> Resolved {
     }
 }
 
+/// Header, mit dem jede Antwort den Stand der eingebetteten Oberfläche nennt. Weicht er von dem Stand
+/// ab, mit dem eine offene Seite geladen wurde, lädt sie sich neu (`frontend/src/stand.ts`).
+pub const STAND_HEADER: HeaderName = HeaderName::from_static("x-lagemonitor-stand");
+
+/// Der Stand ist der Hash der eingebetteten `index.html`: Sie nennt die gehashten Bundles, ändert sich
+/// also mit jeder Änderung an der Oberfläche, aber nicht, wenn nur der Server neu gebaut wurde.
+static STAND: LazyLock<Option<String>> =
+    LazyLock::new(|| Asset::get("index.html").map(|f| hex::encode(&f.metadata.sha256_hash()[..8])));
+
+/// `None`, solange das Frontend nicht gebaut ist; dann vergleicht die Seite nichts.
+pub fn stand() -> Option<&'static str> {
+    STAND.as_deref()
+}
+
+/// Hängt den Stand an jede Antwort.
+pub async fn stand_header(mut res: Response) -> Response {
+    if let Some(wert) = stand().and_then(|s| HeaderValue::from_str(s).ok()) {
+        res.headers_mut().insert(STAND_HEADER, wert);
+    }
+    res
+}
+
+/// Schreibt den Stand als `<meta name="lagemonitor-stand">` in die Seite, damit sie weiß, womit sie
+/// geladen wurde. Ohne `<head>` bleibt die Seite unverändert.
+pub fn mit_stand(html: &str, stand: &str) -> String {
+    match html.find("<head>") {
+        Some(i) => {
+            let ende = i + "<head>".len();
+            format!(
+                "{}<meta name=\"lagemonitor-stand\" content=\"{stand}\" />{}",
+                &html[..ende],
+                &html[ende..]
+            )
+        }
+        None => html.to_string(),
+    }
+}
+
 pub async fn serve(uri: Uri) -> Response {
     match resolve(uri.path(), |p| Asset::get(p).is_some()) {
         Resolved::File(path) => file(&path),
@@ -60,14 +100,16 @@ fn file(path: &str) -> Response {
     } else {
         "no-cache"
     };
-    (
-        [
-            (header::CONTENT_TYPE, mime.as_ref().to_string()),
-            (header::CACHE_CONTROL, cache.to_string()),
-        ],
-        content.data,
-    )
-        .into_response()
+    let headers = [
+        (header::CONTENT_TYPE, mime.as_ref().to_string()),
+        (header::CACHE_CONTROL, cache.to_string()),
+    ];
+    if path == "index.html"
+        && let (Some(stand), Ok(html)) = (stand(), std::str::from_utf8(&content.data))
+    {
+        return (headers, mit_stand(html, stand)).into_response();
+    }
+    (headers, content.data).into_response()
 }
 
 #[cfg(test)]
@@ -88,6 +130,19 @@ mod tests {
     #[test]
     fn api_paths_never_get_the_spa() {
         assert_eq!(resolve("/api/unknown", |_| true), Resolved::NotFound);
+    }
+
+    #[test]
+    fn stand_lands_right_after_head() {
+        assert_eq!(
+            mit_stand("<html><head><title>x</title></head></html>", "ab12"),
+            "<html><head><meta name=\"lagemonitor-stand\" content=\"ab12\" /><title>x</title></head></html>"
+        );
+    }
+
+    #[test]
+    fn page_without_head_stays_as_is() {
+        assert_eq!(mit_stand("<p>x</p>", "ab12"), "<p>x</p>");
     }
 
     #[test]

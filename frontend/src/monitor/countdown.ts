@@ -11,3 +11,15 @@ export function countdownText(targetMs: number, nowMs: number): string {
   const span = h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} min`;
   return d > 0 ? `in ${span}` : `seit ${span}`;
 }
+
+/**
+ * Wie lange eine Meldung nach der Uhrzeit weiterblinkt; danach steht ruhig „seit 12 min“. Gleich wie
+ * die Suite (`lagemonitor/_lib/kategorieRegeln.ts`, `NACHLAUF_MINUTEN`).
+ */
+export const ALERT_AFTER_MINUTES = 10;
+
+/** Blinkt die Meldung? Ab `leadMinutes` vor der Uhrzeit bis `ALERT_AFTER_MINUTES` danach. */
+export function isDue(targetMs: number | null, leadMinutes: number | null, nowMs: number): boolean {
+  if (targetMs === null || leadMinutes === null) return false;
+  return nowMs >= targetMs - leadMinutes * 60_000 && nowMs < targetMs + ALERT_AFTER_MINUTES * 60_000;
+}

@@ -19,6 +19,40 @@ pub struct SuchlageLink {
     pub video: bool,
 }
 
+/// Ein Link, mit dem ein Rechner den Monitor ohne Pocket ID sieht (`auth::link`). Angelegt und
+/// widerrufen in der Suite; hier steht nur der SHA-256 des Schlüssels.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicLink {
+    pub id: String,
+    pub label: String,
+    pub hash: String,
+}
+
+/// Verkehrslage: welche Ebenen an sind, dazu der TomTom-Schlüssel. Der Schlüssel bleibt auf dem
+/// Server; Kacheln und Störungen holt der Server (`web::traffic`, `poller::poll_traffic`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrafficLink {
+    pub tomtom_key: Option<String>,
+    pub flow: bool,
+    pub incidents: bool,
+    pub speed_cameras: bool,
+}
+
+impl TrafficLink {
+    /// Der Schlüssel, wenn eine TomTom-Ebene ihn braucht und er da ist.
+    pub fn key_for(&self, layer_on: bool) -> Option<&str> {
+        self.tomtom_key.as_deref().filter(|_| layer_on)
+    }
+}
+
+/// Zoomstufe ohne Einsatz, solange die Suite keine schickt: etwa der Landkreis.
+pub const MAP_ZOOM_DEFAULT: f64 = 9.0;
+/// Was die Suite einstellen darf; außerhalb gilt der nächste Rand.
+pub const MAP_ZOOM_MIN: f64 = 5.0;
+pub const MAP_ZOOM_MAX: f64 = 16.0;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub location: Location,
@@ -29,6 +63,10 @@ pub struct Settings {
     /// Meldungen fürs Band; auch abgelaufene bleiben bis zur nächsten Abholung hier stehen.
     pub notices: Vec<Notice>,
     pub recruitment: Option<Recruitment>,
+    pub public_links: Vec<PublicLink>,
+    pub traffic: TrafficLink,
+    /// Zoomstufe der Karte ohne Einsatz.
+    pub map_zoom: f64,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -49,6 +87,9 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
         suchlage: get(pool, "suchlage").await?.flatten(),
         notices: get(pool, "notices").await?.unwrap_or_default(),
         recruitment: get(pool, "recruitment").await?.flatten(),
+        public_links: get(pool, "public_links").await?.unwrap_or_default(),
+        traffic: get(pool, "traffic").await?.unwrap_or_default(),
+        map_zoom: get(pool, "map_zoom").await?.unwrap_or(MAP_ZOOM_DEFAULT),
     })
 }
 
@@ -62,6 +103,9 @@ pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
         ("suchlage", to_json(&s.suchlage)?),
         ("notices", to_json(&s.notices)?),
         ("recruitment", to_json(&s.recruitment)?),
+        ("public_links", to_json(&s.public_links)?),
+        ("traffic", to_json(&s.traffic)?),
+        ("map_zoom", to_json(&s.map_zoom)?),
     ];
     let mut tx = pool.begin().await?;
     for (key, value) in rows {
@@ -102,6 +146,7 @@ async fn get<T: DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{NoticeCategory, NoticeColor, NoticeIcon};
 
     #[tokio::test]
     async fn defaults_when_table_empty() {
@@ -114,6 +159,9 @@ mod tests {
         assert_eq!(s.suchlage, None);
         assert!(s.notices.is_empty());
         assert_eq!(s.recruitment, None);
+        assert!(s.public_links.is_empty());
+        assert_eq!(s.traffic, TrafficLink::default());
+        assert_eq!(s.map_zoom, MAP_ZOOM_DEFAULT);
     }
 
     #[tokio::test]
@@ -134,11 +182,33 @@ mod tests {
             text: "Nächste Lagebesprechung".into(),
             countdown_to_ms: Some(1_800_000_000_000),
             expires_at_ms: 1_800_000_600_000,
+            show_from_ms: Some(1_799_999_700_000),
+            category: Some(NoticeCategory {
+                name: "Besprechung".into(),
+                color: NoticeColor::Purple,
+                icon: Some(NoticeIcon {
+                    view_box: "0 0 48 48".into(),
+                    paths: vec!["M14 4z".into()],
+                }),
+                alert_lead_minutes: Some(10),
+            }),
         }];
         s.recruitment = Some(Recruitment {
             url: "https://drk.example.org/mitmachen".into(),
             text: "Lust mitzuhelfen?".into(),
         });
+        s.public_links = vec![PublicLink {
+            id: "l1".into(),
+            label: "Rechner Wache".into(),
+            hash: "ab".repeat(32),
+        }];
+        s.traffic = TrafficLink {
+            tomtom_key: Some("schluessel".into()),
+            flow: true,
+            incidents: false,
+            speed_cameras: true,
+        };
+        s.map_zoom = 11.5;
         save(&pool, &s).await.unwrap();
         assert_eq!(load(&pool).await.unwrap(), s);
         s.suchlage = None;

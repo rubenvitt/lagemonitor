@@ -18,9 +18,9 @@ test('stale_warnings_say_outdated', () => {
   expect(screen.queryByText(/keine Warnungen/)).toBeNull();
 });
 
-test('Ruhe nur bei bekanntem, leerem Warnstand', () => {
+test('„keine Warnungen“ nur bei bekanntem, leerem Warnstand', () => {
   renderHeader();
-  expect(screen.getByText('RUHE · keine Warnungen')).toBeInTheDocument();
+  expect(screen.getByText('keine Warnungen')).toBeInTheDocument();
   expect(screen.getByText('LAGEMONITOR · Uelzen')).toBeInTheDocument();
 });
 
@@ -33,7 +33,7 @@ test('Band zählt Warnungen, nennt die höchste Stufe und „veraltet“ bei alt
 test('Warnungen unter der Schwelle heißen nicht „keine Warnungen“', () => {
   renderHeader(makeView({ warnings: { data: [makeWarning({ severity: 'Minor' })], fetchedAtMs: NOW, stale: false, error: null } }));
   expect(screen.queryByText(/keine Warnungen/)).toBeNull();
-  expect(screen.getByText('RUHE · 1 Warnung unter Schwelle')).toBeInTheDocument();
+  expect(screen.getByText('1 Warnung unter Schwelle')).toBeInTheDocument();
 });
 
 test('ohne Antwort vom Server: Warnlage unbekannt, mit Grund', () => {

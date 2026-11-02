@@ -14,6 +14,9 @@ import { radarAt } from './mapData';
 import { UNKNOWN_LAYOUT, isClientStale, markStale, selectLayout, serverNow } from './selectLayout';
 import './monitor.css';
 
+// Ein festes leeres Feld: ein neues je Abfrage schriebe die Karte jedes Mal neu.
+const NONE: never[] = [];
+
 function useNow(intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -52,7 +55,7 @@ export default function MonitorPage() {
     );
   }
 
-  const { weather, location, modules } = view;
+  const { weather, location, modules, traffic } = view;
   // Ein Suchlage-Stand ohne Einsatz oder lange ohne Antwort zeigt nichts: Alte Spuren und ein
   // eingefrorenes Bild wären schlimmer als keine. Das Band oben bleibt davon unberührt.
   const einsatz = view.suchlage?.data?.mission ? view.suchlage.data : null;
@@ -71,11 +74,15 @@ export default function MonitorPage() {
           <MapPanel
             lat={location.lat}
             lon={location.lon}
-            label={location.label}
+            zoom={view.map.zoom}
             offline={view.map.offline}
             band={modules.warningAreas ? layout.band : []}
             listed={modules.warningAreas ? layout.listed : []}
             radarAt={modules.radar ? radarAt(weather, nowMs) : null}
+            trafficFlow={traffic.flow}
+            nowMs={nowMs}
+            incidents={traffic.incidents?.data ?? NONE}
+            speedCameras={traffic.speedCameras?.data ?? NONE}
             suchlage={einsatz}
             droneOpen={video !== null}
             sideColumn={sideColumn}

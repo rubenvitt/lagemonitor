@@ -424,6 +424,11 @@ function regionLayers(f: Record<string, string>, src: string): LayerSpecificatio
 
 const VERSATILES = 'https://tiles.versatiles.org';
 
+/** MapLibre will absolute Kachel-Adressen; relativ zur Seite, damit der Monitor auch unter einem Pfad läuft. */
+export function offlineTiles(base: string = document.baseURI): string {
+  return `${new URL('api/tiles/', base).href}{z}/{x}/{y}`;
+}
+
 /** Dunkler bzw. heller Shortbread-Stil aus Lifeline, gespeist von VersaTiles (online). */
 export function basemapStyle(theme: KartenTheme, tiles: { offline: boolean }): StyleSpecification {
   const f = FARBEN[theme];
@@ -434,7 +439,7 @@ export function basemapStyle(theme: KartenTheme, tiles: { offline: boolean }): S
       basemap: {
         type: 'vector',
         // Offline liefert das Backend die Kacheln aus dem Cache; Glyphen bleiben in v1 online (Offline-Lücke).
-        tiles: [tiles.offline ? '/api/tiles/{z}/{x}/{y}' : `${VERSATILES}/tiles/osm/{z}/{x}/{y}`],
+        tiles: [tiles.offline ? offlineTiles() : `${VERSATILES}/tiles/osm/{z}/{x}/{y}`],
         minzoom: 0,
         maxzoom: 14,
         attribution: '© OpenStreetMap-Mitwirkende',

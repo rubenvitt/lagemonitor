@@ -10,6 +10,7 @@ import type { Region } from "./Region";
 import type { Severity } from "./Severity";
 import type { Sourced } from "./Sourced";
 import type { SuchlageView } from "./SuchlageView";
+import type { TrafficView } from "./TrafficView";
 import type { Warning } from "./Warning";
 import type { Weather } from "./Weather";
 
@@ -33,4 +34,4 @@ notices: Array<Notice>,
 /**
  * `null`: kein QR-Code fürs Ehrenamt.
  */
-recruitment: Recruitment | null, };
+recruitment: Recruitment | null, traffic: TrafficView, };
