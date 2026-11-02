@@ -297,12 +297,24 @@ pub async fn poll_traffic(
 
 /// Holt die Konfiguration aus der Suite und schreibt sie in `settings`. Scheitert der Abruf, gilt
 /// der letzte Stand weiter, und der Fehler steht unter `CONFIG_KEY`.
+/// Was ein Monitor mit GPS bei der Abholung mitmeldet: der letzte Fix, solange er nicht älter als
+/// ein Tag ist (älter zeigt ihn die Suite ohnehin nicht mehr).
+async fn own_position(state: &AppState) -> Option<String> {
+    state.boot.gpsd?;
+    let (at, p) = store::load::<Position>(&state.pool, GPS_KEY).await?;
+    let age_s = (now_ms() - at) / 1000;
+    (age_s <= OWN_POSITION_MAX_AGE_S).then(|| suite::position_header(&p, age_s))
+}
+
+const OWN_POSITION_MAX_AGE_S: i64 = 24 * 60 * 60;
+
 pub async fn poll_config(state: &AppState) {
     let Some(link) = state.boot.suite.clone() else {
         return;
     };
+    let position = own_position(state).await;
     let http = state.http.clone();
-    let fetched = tokio::spawn(async move { suite::fetch(&http, &link).await }).await;
+    let fetched = tokio::spawn(async move { suite::fetch(&http, &link, position).await }).await;
     let outcome = match fetched {
         Ok(Ok(cfg)) => match settings::save(&state.pool, &cfg).await {
             Ok(()) => store::save(&state.pool, CONFIG_KEY, now_ms(), &())

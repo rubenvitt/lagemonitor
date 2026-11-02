@@ -1,8 +1,10 @@
 import type { Sourced } from '../contract/Sourced';
 import type { SpeedCamera } from '../contract/SpeedCamera';
 import type { TrafficIncident } from '../contract/TrafficIncident';
+import type { Vehicle } from '../contract/Vehicle';
 import type { Warning } from '../contract/Warning';
 import type { Weather } from '../contract/Weather';
+import { clock } from './format';
 
 interface AreaFeature {
   type: 'Feature';
@@ -81,4 +83,30 @@ export function speedCameraFeatures(cameras: SpeedCamera[]): Collection {
       geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
     })),
   };
+}
+
+/** Ab hier gilt eine gemeldete Fahrzeugposition als veraltet (LGM-10); nach 24 h schickt der Server sie nicht mehr. */
+export const VEHICLE_STALE_MS = 10 * 60_000;
+
+export interface VehicleMark {
+  id: string;
+  callSign: string;
+  /** Data-URI des Zeichens; nur für `<img>`, das kein Skript im SVG ausführt. */
+  src: string;
+  lat: number;
+  lon: number;
+  /** `Stand HH:mm`, wenn die Position veraltet ist, sonst `null`. */
+  stand: string | null;
+}
+
+/** Fahrzeuge für die Karte: das eigene am GPS-Fix dieses Monitors (`here`), die übrigen an ihrer letzten Meldung. */
+export function vehicleMarks(vehicles: Vehicle[], nowMs: number, here: { lat: number; lon: number }): VehicleMark[] {
+  return vehicles.map((v) => ({
+    id: v.id,
+    callSign: v.callSign,
+    src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(v.symbol)}`,
+    lat: v.own ? here.lat : v.lat,
+    lon: v.own ? here.lon : v.lon,
+    stand: !v.own && nowMs - v.atMs > VEHICLE_STALE_MS ? `Stand ${clock(v.atMs)}` : null,
+  }));
 }

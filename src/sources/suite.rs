@@ -5,11 +5,11 @@
 use reqwest::Url;
 use serde::Deserialize;
 
-use super::{SourceError, endpoint, get_bytes_as};
+use super::{SourceError, endpoint, send_bytes};
 use crate::config::SuiteLink;
 use crate::contract::{
-    Location, Modules, Notice, NoticeCategory, NoticeColor, NoticeIcon, Recruitment, Region,
-    Severity,
+    Location, Modules, Notice, NoticeCategory, NoticeColor, NoticeIcon, Position, Recruitment,
+    Region, Severity, Vehicle,
 };
 use crate::settings::{
     MAP_ZOOM_DEFAULT, MAP_ZOOM_MAX, MAP_ZOOM_MIN, PublicLink, Settings, SuchlageLink, TrafficLink,
@@ -41,6 +41,46 @@ struct Body {
     /// Kartenausschnitt; eine Suite ohne das Feld lässt die Vorgabe stehen.
     #[serde(default)]
     map: Option<RawMap>,
+    /// Fahrzeuge auf der Karte (LGM-10); eine Suite ohne das Feld hat keine.
+    #[serde(default)]
+    vehicles: Vec<RawVehicle>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawVehicle {
+    id: String,
+    call_sign: String,
+    symbol: String,
+    lat: f64,
+    lon: f64,
+    at: String,
+    #[serde(default)]
+    own: bool,
+}
+
+/// Ein Zeichen aus kommplan hat gut 1 KB; viel mehr ist kein Zeichen, sondern ein Fehler.
+const VEHICLE_SYMBOL_MAX: usize = 32 * 1024;
+
+/// Ein Fahrzeug, das sich nicht zeichnen lässt, fällt still weg; der Rest der Konfiguration gilt.
+fn vehicle(v: RawVehicle) -> Option<Vehicle> {
+    let at_ms = chrono::DateTime::parse_from_rfc3339(&v.at)
+        .ok()?
+        .timestamp_millis();
+    let ok = v.symbol.len() <= VEHICLE_SYMBOL_MAX
+        && v.symbol.starts_with("<svg")
+        && (-90.0..=90.0).contains(&v.lat)
+        && (-180.0..=180.0).contains(&v.lon)
+        && !v.call_sign.trim().is_empty();
+    ok.then_some(Vehicle {
+        id: v.id,
+        call_sign: v.call_sign,
+        symbol: v.symbol,
+        lat: v.lat,
+        lon: v.lon,
+        at_ms,
+        own: v.own,
+    })
 }
 
 #[derive(Deserialize)]
@@ -219,6 +259,7 @@ pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
             .collect(),
         traffic: traffic(raw.traffic),
         map_zoom: map_zoom(raw.map),
+        vehicles: raw.vehicles.into_iter().filter_map(vehicle).collect(),
     })
 }
 
@@ -226,9 +267,26 @@ pub fn config_url(link: &SuiteLink) -> Result<Url, SourceError> {
     endpoint(&link.url, "api/konfiguration")
 }
 
-pub async fn fetch(http: &reqwest::Client, link: &SuiteLink) -> Result<Settings, SourceError> {
-    let body = get_bytes_as(http, config_url(link)?, Some(&link.token)).await?;
-    parse(&body)
+/// Kopfzeile, in der ein Monitor mit GPS seinen Fix bei der Abholung mitschickt (keine eigene Anfrage).
+pub const POSITION_HEADER: &str = "x-lagemonitor-position";
+
+/// `<Breite>,<Länge>,<Alter in s>`; das Alter statt eines Zeitpunkts, damit die Uhr im Fahrzeug nicht zählt.
+pub fn position_header(p: &Position, age_s: i64) -> String {
+    format!("{:.6},{:.6},{}", p.lat, p.lon, age_s.max(0))
+}
+
+/// Holt die Konfiguration; `position` ist der letzte Fix samt Alter, wenn dieser Monitor ein GPS hat.
+pub async fn fetch(
+    http: &reqwest::Client,
+    link: &SuiteLink,
+    position: Option<String>,
+) -> Result<Settings, SourceError> {
+    let url = config_url(link)?;
+    let mut req = http.get(url.clone()).bearer_auth(&link.token);
+    if let Some(p) = position {
+        req = req.header(POSITION_HEADER, p);
+    }
+    parse(&send_bytes(req, &url).await?)
 }
 
 #[cfg(test)]
@@ -251,6 +309,50 @@ pub(crate) mod tests {
         assert_eq!(s.warn_threshold, Severity::Moderate);
         assert!(!s.modules.radar);
         assert_eq!(s.suchlage.unwrap().token, "geheim");
+    }
+
+    #[test]
+    fn vehicles_are_read_and_unusable_ones_dropped() {
+        assert!(parse(EXAMPLE.as_bytes()).unwrap().vehicles.is_empty());
+        let svg = r#"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"></svg>"#;
+        let big = format!("<svg>{}</svg>", "x".repeat(VEHICLE_SYMBOL_MAX));
+        let v = |id: &str, symbol: &str, lat: f64, at: &str| {
+            format!(
+                r#"{{ "id": "{id}", "callSign": "Rotkreuz Uelzen 40-12-1", "symbol": "{symbol}", "lat": {lat}, "lon": 10.57, "at": "{at}", "own": true }}"#
+            )
+        };
+        let list = [
+            v("gut", svg, 52.96, "2026-11-02T14:00:00.000Z"),
+            v(
+                "kein-svg",
+                "<script>alert(1)</script>",
+                52.96,
+                "2026-11-02T14:00:00.000Z",
+            ),
+            v("zu-gross", &big, 52.96, "2026-11-02T14:00:00.000Z"),
+            v("breite", svg, 91.0, "2026-11-02T14:00:00.000Z"),
+            v("zeit", svg, 52.96, "gestern"),
+        ]
+        .join(",");
+        let body = EXAMPLE.replace(
+            "\"suchlage\": {",
+            &format!(r#""vehicles": [{list}], "suchlage": {{"#),
+        );
+        let s = parse(body.as_bytes()).unwrap();
+        assert_eq!(s.vehicles.len(), 1);
+        assert_eq!(s.vehicles[0].id, "gut");
+        assert_eq!(s.vehicles[0].at_ms, 1_793_628_000_000);
+        assert!(s.vehicles[0].own);
+    }
+
+    #[test]
+    fn the_position_header_carries_the_age_not_the_clock() {
+        let p = Position {
+            lat: 52.963712345,
+            lon: 10.5772,
+        };
+        assert_eq!(position_header(&p, 12), "52.963712,10.577200,12");
+        assert_eq!(position_header(&p, -3), "52.963712,10.577200,0");
     }
 
     #[test]

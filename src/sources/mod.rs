@@ -36,6 +36,14 @@ pub(crate) async fn get_bytes_as(
     if let Some(token) = bearer {
         req = req.bearer_auth(token);
     }
+    send_bytes(req, &url).await
+}
+
+/// Schickt eine fertig gebaute Anfrage ab. Fehlermeldungen nennen nur die Adresse, nie Kopfzeilen.
+pub(crate) async fn send_bytes(
+    req: reqwest::RequestBuilder,
+    url: &Url,
+) -> Result<Vec<u8>, SourceError> {
     let res = req
         .timeout(TIMEOUT)
         .send()
