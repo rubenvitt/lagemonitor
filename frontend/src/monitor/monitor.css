@@ -196,11 +196,10 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.lm-fahrzeug[data-veraltet] {
-  opacity: 0.55;
-}
+/* Am Zeichen, nicht am Marker: maplibre setzt `opacity` am Marker-Element selbst (inline). */
 .lm-fahrzeug[data-veraltet] img {
   filter: grayscale(1);
+  opacity: 0.55;
 }
 .lm-fahrzeug[data-veraltet] span {
   color: var(--lfh-gedaempft);
