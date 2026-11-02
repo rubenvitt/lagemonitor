@@ -92,7 +92,7 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
         None => None,
     };
     let (weather_key, nina_key) = (
-        poller::weather_key(&location),
+        poller::weather_key_near(&state, &location).await,
         poller::nina_key(&cfg.region),
     );
     let suchlage = suchlage(&state, &cfg, now_ms).await;

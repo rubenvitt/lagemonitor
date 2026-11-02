@@ -45,6 +45,32 @@ pub fn weather_key(location: &Location) -> String {
     format!("weather:{:.2},{:.2}", location.lat, location.lon)
 }
 
+/// So weit darf ein Wetterstand weg sein, um bis zum nächsten Abruf einzuspringen.
+const WEATHER_NEAR_KM: f64 = 25.0;
+
+/// Schlüssel des Wetterstands für die Anzeige: der eigene, sonst der neueste in der Nähe. Fährt das
+/// Fahrzeug, liegt der letzte Abruf meist eine Zelle zurück; ohne Rückfall wäre das Wetter leer.
+/// Ein Ort weiter weg (geänderte Einstellungen) zeigt kein fremdes Wetter.
+// shortcut: alte `weather:`-Zeilen bleiben liegen (eine je befahrener Zelle); aufräumen, wenn die Tabelle stört.
+pub async fn weather_key_near(state: &AppState, location: &Location) -> String {
+    let key = weather_key(location);
+    let rows = store::sources_with_prefix(&state.pool, "weather:").await;
+    if rows.iter().any(|(source, _)| *source == key) {
+        return key;
+    }
+    let near = |source: &str| {
+        let (lat, lon) = source.strip_prefix("weather:")?.split_once(',')?;
+        let (lat, lon): (f64, f64) = (lat.parse().ok()?, lon.parse().ok()?);
+        // Flache Näherung genügt auf diese Entfernung.
+        let dy = (lat - location.lat) * 111.2;
+        let dx = (lon - location.lon) * 111.2 * location.lat.to_radians().cos();
+        Some(dx.hypot(dy) <= WEATHER_NEAR_KM)
+    };
+    rows.into_iter()
+        .find(|(source, _)| near(source) == Some(true))
+        .map_or(key, |(source, _)| source)
+}
+
 /// Standort für Wetter, Karte und Tageslicht: der letzte GPS-Fix, auch ein alter (das Fahrzeug steht
 /// meist noch da). Ohne gpsd oder ohne je einen Fix der eingestellte Ort. Der Name bleibt der
 /// eingestellte, einen Ortsnamen aus Koordinaten gibt es nicht.
@@ -371,6 +397,33 @@ mod tests {
         assert!(!gps.stale);
         assert_eq!(gps.error.as_deref(), Some("kein GPS-Fix"));
         assert_eq!(view.location, loc);
+    }
+
+    #[tokio::test]
+    async fn weather_falls_back_to_nearby_cell() {
+        let state = gps_state(None).await;
+        let at = |lat: f64, lon: f64| Location {
+            lat,
+            lon,
+            label: "x".into(),
+        };
+        // Zwei Zellen zurück (gut 2 km) liegt ein Stand, 60 km weg ein neuerer.
+        store::save(&state.pool, "weather:52.97,10.56", 1000, &1)
+            .await
+            .unwrap();
+        store::save(&state.pool, "weather:53.50,10.56", 2000, &2)
+            .await
+            .unwrap();
+        let here = at(52.99, 10.57);
+        assert_eq!(weather_key_near(&state, &here).await, "weather:52.97,10.56");
+        // Gibt es den eigenen, gilt er.
+        store::save(&state.pool, &weather_key(&here), 500, &3)
+            .await
+            .unwrap();
+        assert_eq!(weather_key_near(&state, &here).await, weather_key(&here));
+        // Weit weg nichts in der Nähe: der eigene Schlüssel, also kein Stand.
+        let far = at(48.1, 11.6);
+        assert_eq!(weather_key_near(&state, &far).await, weather_key(&far));
     }
 
     #[tokio::test]
