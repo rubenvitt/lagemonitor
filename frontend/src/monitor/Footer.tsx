@@ -20,6 +20,15 @@ function suchlageState({ suchlage }: MonitorView): { text: string; alert: boolea
   return { text: suchlage.data.mission ? 'Suchlage · Einsatz läuft' : 'Suchlage · kein Einsatz', alert: false };
 }
 
+/** Woher der Standort kommt, nur mit gpsd: Ohne Fix gilt der eingestellte Ort, ein alter Fix fällt auf. */
+function gpsState({ gps }: MonitorView): { text: string; alert: boolean } | null {
+  if (!gps) return null;
+  if (gps.data === null) return { text: 'GPS ohne Fix · Standort eingestellt', alert: true };
+  const at = gps.fetchedAtMs === null ? '–' : clock(gps.fetchedAtMs);
+  if (gps.stale) return { text: `Standort veraltet · GPS ${at}`, alert: true };
+  return { text: `Standort GPS · ${at}`, alert: false };
+}
+
 /** Woher die Einstellungen stammen; scheitert die Abholung, gilt der letzte Stand und das steht da. */
 function configState({ config }: MonitorView): { text: string; alert: boolean } | null {
   if (!config.fromSuite) return null;
@@ -29,7 +38,7 @@ function configState({ config }: MonitorView): { text: string; alert: boolean } 
 }
 
 export default function Footer({ view }: { view?: MonitorView }) {
-  const states = view ? [dataState(view), suchlageState(view), configState(view)] : [];
+  const states = view ? [dataState(view), gpsState(view), suchlageState(view), configState(view)] : [];
   return (
     <footer className="lm-fuss" data-theme="dark">
       {states.map(

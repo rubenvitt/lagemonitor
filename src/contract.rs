@@ -50,6 +50,15 @@ pub struct Location {
     pub label: String,
 }
 
+/// Fix vom gpsd des Fahrzeugrouters.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct Position {
+    pub lat: f64,
+    pub lon: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../frontend/src/contract/")]
@@ -264,7 +273,10 @@ pub struct Recruitment {
 pub struct MonitorView {
     #[ts(type = "number")]
     pub now_ms: i64,
+    /// Wo das Fahrzeug steht: der letzte GPS-Fix, sonst der eingestellte Ort (`poller::location`).
     pub location: Location,
+    /// Letzter GPS-Fix; `null`, wenn kein gpsd eingestellt ist. `data: null`: noch nie ein Fix.
+    pub gps: Option<Sourced<Position>>,
     pub region: Region,
     pub warn_threshold: Severity,
     pub weather: Sourced<Weather>,

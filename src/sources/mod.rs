@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use reqwest::Url;
 
+pub mod gpsd;
 pub mod nina;
 pub mod suchlage;
 pub mod suite;

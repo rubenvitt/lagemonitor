@@ -126,6 +126,11 @@ services:
     network_mode: host
     environment:
       LAGEMONITOR_BIND: 127.0.0.1:8080,${LAN_IP:?LAN_IP fehlt – siehe .env}:8080
+      # Verwaltung in der IUK-Suite (Schritt 9); leer = nur lokale Einstellungen.
+      LAGEMONITOR_SUITE_URL: ${LAGEMONITOR_SUITE_URL:-}
+      LAGEMONITOR_SUITE_TOKEN: ${LAGEMONITOR_SUITE_TOKEN:-}
+      # gpsd des Fahrzeugrouters (deploy/README.md, Schritt 9); leer = Standort nur aus den Einstellungen.
+      LAGEMONITOR_GPSD: ${LAGEMONITOR_GPSD:-}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -293,6 +298,27 @@ Verwaltet wird der Lagemonitor in der **IUK-Suite** unter *Lagemonitor* (Gruppe 
 3. **So prüfst du es:** Nach spätestens einer Minute steht in der Suite beim Zugang „zuletzt abgeholt“ mit Uhrzeit, und `curl -s 127.0.0.1:8080/api/monitor | grep -o '"config":{[^}]*}'` zeigt `"fromSuite":true` und `"error":null`.
 
 Was in der Suite steht, überschreibt die lokalen Werte bei jeder Abholung. Ohne die beiden Zeilen gilt allein die Datenbank.
+
+### Standort per GPS vom Fahrzeugrouter
+
+Der Router im FüKw (TDT G3000-LW) hat GPS und gibt die Position über gpsd auf `192.168.0.50:2947` ins Fahrzeugnetz. Ist das eingetragen, gilt als Standort der letzte GPS-Fix statt des eingestellten Orts. Der Name (etwa „Uelzen“) und der Landkreis für die Warnungen bleiben die eingestellten.
+
+1. Am Router gpsd einschalten (LuCI → Dienste, oder `uci set services.gpsd.enabled=1 && uci commit`) und den Router einmal neu starten.
+2. Vom Server aus prüfen, dass Positionen ankommen:
+
+   ```bash
+   (echo '?WATCH={"enable":true,"json":true}'; sleep 5) | nc 192.168.0.50 2947 | grep TPV
+   ```
+
+   Zeilen mit `"mode":2` oder `"mode":3` und `"lat"` heißen: Fix. `"mode":1` heißt: kein Fix (keine freie Sicht zum Himmel, Kaltstart dauert einige Minuten).
+3. Eintragen und neu starten:
+
+   ```bash
+   echo 'LAGEMONITOR_GPSD=192.168.0.50:2947' | sudo tee -a /opt/lagemonitor/.env
+   cd /opt/lagemonitor && docker compose up -d
+   ```
+
+Der Fuß zeigt danach „Standort GPS · Uhrzeit“. Ohne Fix bleibt der letzte bekannte Standort stehen, und der Fuß zeigt „Standort veraltet · GPS Uhrzeit“. Kam noch nie ein Fix, gilt der eingestellte Ort und dort steht „GPS ohne Fix · Standort eingestellt“.
 
 ### Ohne IUK-Suite: direkt in der Datenbank
 

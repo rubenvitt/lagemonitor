@@ -18,6 +18,8 @@ pub struct BootConfig {
     pub binds: Vec<SocketAddr>,
     /// `None`: keine Suite, es gilt allein die lokale Tabelle `settings`.
     pub suite: Option<SuiteLink>,
+    /// gpsd des Fahrzeugrouters, etwa `192.168.0.50:2947`. `None`: Standort nur aus den Einstellungen.
+    pub gpsd: Option<SocketAddr>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -59,10 +61,22 @@ impl BootConfig {
             get("LAGEMONITOR_SUITE_URL").filter(|v| !v.trim().is_empty()),
             get("LAGEMONITOR_SUITE_TOKEN").filter(|v| !v.trim().is_empty()),
         )?;
+        let gpsd = get("LAGEMONITOR_GPSD")
+            .filter(|v| !v.trim().is_empty())
+            .map(|v| {
+                v.trim()
+                    .parse()
+                    .map_err(|e: std::net::AddrParseError| BootError {
+                        var: "LAGEMONITOR_GPSD",
+                        reason: e.to_string(),
+                    })
+            })
+            .transpose()?;
         Ok(Self {
             data_dir,
             binds,
             suite,
+            gpsd,
         })
     }
 
@@ -165,6 +179,23 @@ mod tests {
         ]))
         .unwrap_err();
         assert_eq!(err.var, "LAGEMONITOR_SUITE_URL");
+    }
+
+    #[test]
+    fn gpsd_is_optional_address() {
+        assert_eq!(BootConfig::from_lookup(lookup(&[])).unwrap().gpsd, None);
+        assert_eq!(
+            BootConfig::from_lookup(lookup(&[("LAGEMONITOR_GPSD", " ")]))
+                .unwrap()
+                .gpsd,
+            None
+        );
+        let cfg =
+            BootConfig::from_lookup(lookup(&[("LAGEMONITOR_GPSD", "192.168.0.50:2947")])).unwrap();
+        assert_eq!(cfg.gpsd, Some("192.168.0.50:2947".parse().unwrap()));
+        let err =
+            BootConfig::from_lookup(lookup(&[("LAGEMONITOR_GPSD", "router:2947")])).unwrap_err();
+        assert_eq!(err.var, "LAGEMONITOR_GPSD");
     }
 
     #[test]

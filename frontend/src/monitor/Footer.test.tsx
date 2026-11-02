@@ -23,3 +23,17 @@ test('frischer Stand ohne Kartenquelle', () => {
   expect(screen.queryByText(/^Karte /)).toBeNull();
   expect(screen.queryByText(/Veraltet/)).toBeNull();
 });
+
+test('ohne gpsd kein GPS-Hinweis', () => {
+  render(<Footer view={makeView()} />);
+  expect(screen.queryByText(/GPS/)).toBeNull();
+});
+
+test('GPS: frisch, veraltet, nie ein Fix', () => {
+  const { rerender } = render(<Footer view={makeView({ gps: { data: { lat: 1, lon: 2 }, fetchedAtMs: NOW, stale: false, error: null } })} />);
+  expect(screen.getByText(/^Standort GPS · \d\d:\d\d$/)).not.toHaveClass('lm-fuss-alarm');
+  rerender(<Footer view={makeView({ gps: { data: { lat: 1, lon: 2 }, fetchedAtMs: NOW - HOUR, stale: true, error: 'kein GPS-Fix' } })} />);
+  expect(screen.getByText(/^Standort veraltet · GPS \d\d:\d\d$/)).toHaveClass('lm-fuss-alarm');
+  rerender(<Footer view={makeView({ gps: { data: null, fetchedAtMs: null, stale: true, error: 'gpsd schweigt' } })} />);
+  expect(screen.getByText('GPS ohne Fix · Standort eingestellt')).toHaveClass('lm-fuss-alarm');
+});
