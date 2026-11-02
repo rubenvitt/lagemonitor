@@ -62,9 +62,15 @@ export default function MapPanel({
   const { effektiv } = useThemeMode();
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MapLibreMap | null>(null);
-
-  // Neu erzeugt nur bei Theme, Kartenquelle, Standort oder Zoomstufe, nicht bei jedem Datenstand.
+  // Nur der Start der Karte; danach wandert der Punkt (GPS), ohne die Karte neu zu bauen.
+  const start = useRef({ lat, lon });
   useEffect(() => {
+    start.current = { lat, lon };
+  }, [lat, lon]);
+
+  // Neu erzeugt nur bei Theme, Kartenquelle oder Zoomstufe, nicht bei jedem Datenstand.
+  useEffect(() => {
+    const { lat, lon } = start.current;
     const f = effektiv === 'dark' ? farbenDunkel : farbenHell;
     const kindColor: ExpressionSpecification = ['match', ['get', 'kind'], 'band', f.alarm, f.achtung];
     const m = new MapLibreMap({
@@ -177,15 +183,20 @@ export default function MapPanel({
       setMap(null);
       m.remove();
     };
-  }, [effektiv, offline, lat, lon, zoom]);
+  }, [effektiv, offline, zoom]);
 
-  // `!map?.style`: Wechselt Theme, Kartenquelle oder Standort, entfernt der Effekt oben die alte Karte
+  // `!map?.style`: Wechselt Theme, Kartenquelle oder Zoomstufe, entfernt der Effekt oben die alte Karte
   // (`remove()` löscht `style`), bevor `setMap(null)` ankommt. Die Effekte unten laufen im selben
   // Commit noch mit ihr, und ein Fehler dort leerte den ganzen Bildschirm (fuekw-server, 28.10.2026).
   useEffect(() => {
     if (!map?.style) return;
     map.getSource<GeoJSONSource>('warngebiete')?.setData(warningAreas(band, listed) as Parameters<GeoJSONSource['setData']>[0]);
   }, [map, band, listed]);
+
+  useEffect(() => {
+    if (!map?.style) return;
+    map.getSource<GeoJSONSource>('standort')?.setData({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } });
+  }, [map, lat, lon]);
 
   useEffect(() => {
     if (!map?.style) return;
@@ -219,6 +230,8 @@ export default function MapPanel({
   // Drohnenbild ein- bzw. ausfährt – nicht bei jedem Spurpunkt.
   const bounds = suchlage ? suchlageBounds(suchlage) : null;
   const key = boundsKey(bounds);
+  // Auf rund 100 m: Das GPS zittert, die Karte soll dabei stillhalten.
+  const centerKey = `${lat.toFixed(3)},${lon.toFixed(3)}`;
   useEffect(() => {
     if (!map?.style) return;
     const right = droneOpen ? Math.round(map.getContainer().clientWidth * coveredByDrone(sideColumn)) : 0;
@@ -227,7 +240,7 @@ export default function MapPanel({
     else map.easeTo({ center: [lon, lat], zoom, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
     // `bounds` steckt in `key`; ein neues Array je Abfrage soll nicht neu einpassen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, key, droneOpen, sideColumn, lat, lon, zoom]);
+  }, [map, key, droneOpen, sideColumn, centerKey, zoom]);
 
   return (
     <section className="lm-paneel lm-karte">

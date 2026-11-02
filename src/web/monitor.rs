@@ -7,8 +7,8 @@ use serde::de::DeserializeOwned;
 
 use crate::app::AppState;
 use crate::contract::{
-    ConfigState, MapInfo, MonitorView, NOTICES_VISIBLE_MAX, Sourced, SpeedCamera, SuchlageView,
-    TrafficIncident, TrafficView, Warning, Weather,
+    ConfigState, MapInfo, MonitorView, NOTICES_VISIBLE_MAX, Position, Sourced, SpeedCamera,
+    SuchlageView, TrafficIncident, TrafficView, Warning, Weather,
 };
 use crate::error::AppError;
 use crate::{poller, settings, store};
@@ -17,6 +17,8 @@ const NINA_STALE_MS: i64 = 5 * 60_000;
 const WEATHER_STALE_MS: i64 = 45 * 60_000;
 /// Drei verpasste Abfragen à 5 s.
 const SUCHLAGE_STALE_MS: i64 = 20_000;
+/// gpsd meldet jede Sekunde, gespeichert wird alle 10 s: Eine Minute ohne Fix fällt auf.
+const GPS_STALE_MS: i64 = 60_000;
 /// Drei verpasste Abfragen; Baustellen ändern sich langsam, der Stand bleibt trotzdem sichtbar.
 const INCIDENTS_STALE_MS: i64 = 3 * poller::INCIDENTS_INTERVAL_MS;
 const SPEED_CAMERA_STALE_MS: i64 = 3 * poller::SPEED_CAMERA_INTERVAL_MS;
@@ -134,8 +136,13 @@ async fn config(state: &AppState) -> ConfigState {
 pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, AppError> {
     let cfg = settings::load(&state.pool).await?;
     let now_ms = Utc::now().timestamp_millis();
+    let location = poller::location(&state, &cfg).await;
+    let gps = match state.boot.gpsd {
+        Some(_) => Some(sourced::<Position>(&state, poller::GPS_KEY, GPS_STALE_MS, now_ms).await),
+        None => None,
+    };
     let (weather_key, nina_key) = (
-        poller::weather_key(&cfg.location),
+        poller::weather_key_near(&state, &location).await,
         poller::nina_key(&cfg.region),
     );
     let suchlage = suchlage(&state, &cfg, now_ms).await;
@@ -143,7 +150,8 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
     let traffic = traffic(&state, &cfg, now_ms).await;
     Ok(Json(MonitorView {
         now_ms,
-        location: cfg.location,
+        location,
+        gps,
         region: cfg.region,
         warn_threshold: cfg.warn_threshold,
         weather: sourced::<Weather>(&state, &weather_key, WEATHER_STALE_MS, now_ms).await,

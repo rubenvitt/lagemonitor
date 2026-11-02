@@ -56,12 +56,13 @@ export function isClientStale(isError: boolean, dataUpdatedAt: number, nowMs: nu
   return isError || nowMs - dataUpdatedAt > CLIENT_STALE_MS;
 }
 
-/** Markiert beide Quellen als veraltet. */
+/** Markiert alle Quellen mit Alter als veraltet. */
 export function markStale(view: MonitorView, stale: boolean): MonitorView {
   if (!stale) return view;
   return {
     ...view,
     weather: { ...view.weather, stale: true },
     warnings: { ...view.warnings, stale: true },
+    gps: view.gps && { ...view.gps, stale: true },
   };
 }

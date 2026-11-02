@@ -1,5 +1,6 @@
 //! Abruf im Hintergrund: je Quelle eine Schleife, Ergebnis landet in `snapshots`.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -8,14 +9,22 @@ use serde::Serialize;
 
 use crate::app::AppState;
 use crate::app::SuchlageSnapshot;
-use crate::contract::{Location, Region, Warning};
-use crate::sources::{SourceError, nina, osm, suchlage, suite, tomtom, weather};
+use crate::contract::{Location, Position, Region, Warning};
+use crate::sources::{SourceError, gpsd, nina, osm, suchlage, suite, tomtom, weather};
 use crate::{settings, store};
 
 pub const NINA_BASE: &str = "https://warnung.bund.de/api31";
 pub const BRIGHT_SKY_BASE: &str = "https://api.brightsky.dev";
 pub const NINA_INTERVAL: Duration = Duration::from_secs(60);
-pub const WEATHER_INTERVAL: Duration = Duration::from_secs(600);
+/// So oft wird nachgesehen, ob für den Standort ein frischer Wetterstand da ist: Fährt das Fahrzeug,
+/// kommt der neue Ort binnen einer Minute an.
+pub const WEATHER_INTERVAL: Duration = Duration::from_secs(60);
+/// So alt darf ein Wetterstand werden, bevor er neu abgerufen wird.
+const WEATHER_REFRESH_MS: i64 = 600_000;
+const GPS_RETRY: Duration = Duration::from_secs(5);
+const GPS_READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// gpsd meldet jede Sekunde; in die Datenbank geht höchstens alle 10 s ein Fix.
+const GPS_SAVE_EVERY_MS: i64 = 10_000;
 pub const CONFIG_INTERVAL: Duration = Duration::from_secs(60);
 pub const SUCHLAGE_INTERVAL: Duration = Duration::from_secs(5);
 /// Takt, in dem nachgesehen wird, ob ein Verkehrs-Stand fällig ist; abgefragt wird viel seltener.
@@ -30,6 +39,8 @@ pub const TRAFFIC_RETRY_MS: i64 = 15 * 60_000;
 /// Stand-Schlüssel der Konfiguration aus der Suite (nur Zeitpunkt, die Werte stehen in `settings`).
 pub const CONFIG_KEY: &str = "suite-config";
 pub const SUCHLAGE_KEY: &str = "suchlage";
+/// Letzter GPS-Fix (`Position`).
+pub const GPS_KEY: &str = "gps";
 
 /// Schlüssel der Stände: Ort und Kreis gehören dazu, sonst stünde nach einer Änderung der
 /// Einstellungen der alte Stand unter dem neuen Namen.
@@ -37,8 +48,53 @@ pub fn nina_key(region: &Region) -> String {
     format!("nina:{}", region.ars)
 }
 
+/// Auf rund einen Kilometer: Das GPS zittert um Meter, und je Schlüssel gibt es einen eigenen Stand.
 pub fn weather_key(location: &Location) -> String {
-    format!("weather:{:.4},{:.4}", location.lat, location.lon)
+    format!("weather:{:.2},{:.2}", location.lat, location.lon)
+}
+
+/// So weit darf ein Wetterstand weg sein, um bis zum nächsten Abruf einzuspringen.
+const WEATHER_NEAR_KM: f64 = 25.0;
+
+/// Schlüssel des Wetterstands für die Anzeige: der eigene, sonst der neueste in der Nähe. Fährt das
+/// Fahrzeug, liegt der letzte Abruf meist eine Zelle zurück; ohne Rückfall wäre das Wetter leer.
+/// Ein Ort weiter weg (geänderte Einstellungen) zeigt kein fremdes Wetter.
+// shortcut: alte `weather:`-Zeilen bleiben liegen (eine je befahrener Zelle); aufräumen, wenn die Tabelle stört.
+pub async fn weather_key_near(state: &AppState, location: &Location) -> String {
+    let key = weather_key(location);
+    let rows = store::sources_with_prefix(&state.pool, "weather:").await;
+    if rows.iter().any(|(source, _)| *source == key) {
+        return key;
+    }
+    let near = |source: &str| {
+        let (lat, lon) = source.strip_prefix("weather:")?.split_once(',')?;
+        let (lat, lon): (f64, f64) = (lat.parse().ok()?, lon.parse().ok()?);
+        // Flache Näherung genügt auf diese Entfernung.
+        let dy = (lat - location.lat) * 111.2;
+        let dx = (lon - location.lon) * 111.2 * location.lat.to_radians().cos();
+        Some(dx.hypot(dy) <= WEATHER_NEAR_KM)
+    };
+    rows.into_iter()
+        .find(|(source, _)| near(source) == Some(true))
+        .map_or(key, |(source, _)| source)
+}
+
+/// Standort für Wetter, Karte und Tageslicht: der letzte GPS-Fix, auch ein alter (das Fahrzeug steht
+/// meist noch da). Ohne gpsd oder ohne je einen Fix der eingestellte Ort. Der Name bleibt der
+/// eingestellte, einen Ortsnamen aus Koordinaten gibt es nicht.
+pub async fn location(state: &AppState, cfg: &settings::Settings) -> Location {
+    let fix = match state.boot.gpsd {
+        Some(_) => store::load::<Position>(&state.pool, GPS_KEY).await,
+        None => None,
+    };
+    match fix {
+        Some((_, p)) => Location {
+            lat: p.lat,
+            lon: p.lon,
+            label: cfg.location.label.clone(),
+        },
+        None => cfg.location.clone(),
+    }
 }
 
 pub fn incidents_key(location: &Location) -> String {
@@ -137,11 +193,68 @@ pub async fn poll_weather(state: &AppState, http: &reqwest::Client, base: &Url) 
     let Some(cfg) = load_settings(state).await else {
         return;
     };
-    let key = weather_key(&cfg.location);
+    let location = location(state, &cfg).await;
+    let key = weather_key(&location);
+    let fresh = store::load::<serde::de::IgnoredAny>(&state.pool, &key)
+        .await
+        .is_some_and(|(at, _)| now_ms() - at < WEATHER_REFRESH_MS);
+    if fresh {
+        return;
+    }
     let (http, base) = (http.clone(), base.clone());
-    let fetcher =
-        move || async move { weather::fetch(&http, &base, &cfg.location, Utc::now()).await };
+    let fetcher = move || async move { weather::fetch(&http, &base, &location, Utc::now()).await };
     run_once(state, &key, fetcher, now_ms).await;
+}
+
+/// Hält die Verbindung zum gpsd und baut sie nach einem Abbruch neu auf. Ohne Fix bleibt der letzte
+/// Stand stehen und veraltet sichtbar (`web::monitor`); der Grund steht unter `GPS_KEY`.
+pub async fn watch_gps(state: &AppState, addr: SocketAddr) {
+    loop {
+        let e = follow_gps(state, addr).await;
+        tracing::debug!(error = %e, "gpsd-Verbindung beendet");
+        state
+            .errors
+            .write()
+            .await
+            .insert(GPS_KEY.to_string(), e.to_string());
+        tokio::time::sleep(GPS_RETRY).await;
+    }
+}
+
+/// Eine Verbindung, bis sie abbricht.
+async fn follow_gps(state: &AppState, addr: SocketAddr) -> SourceError {
+    let mut conn = match gpsd::Connection::open(addr, GPS_READ_TIMEOUT).await {
+        Ok(conn) => conn,
+        Err(e) => return e,
+    };
+    let mut saved_at: Option<i64> = None;
+    loop {
+        let position = match conn.next().await {
+            Ok(gpsd::Report::Fix(position)) => position,
+            Ok(gpsd::Report::NoFix) => {
+                let mut errors = state.errors.write().await;
+                errors.insert(GPS_KEY.to_string(), "kein GPS-Fix".to_string());
+                continue;
+            }
+            Err(e) => return e,
+        };
+        let now = now_ms();
+        if saved_at.is_some_and(|at| now - at < GPS_SAVE_EVERY_MS) {
+            continue;
+        }
+        let outcome = store::save(&state.pool, GPS_KEY, now, &position).await;
+        let mut errors = state.errors.write().await;
+        match outcome {
+            Ok(()) => {
+                saved_at = Some(now);
+                errors.remove(GPS_KEY);
+            }
+            Err(e) => {
+                tracing::warn!(error = ?e, "GPS-Fix nicht gespeichert");
+                errors.insert(GPS_KEY.to_string(), "Speichern fehlgeschlagen".to_string());
+            }
+        }
+    }
 }
 
 /// Baustellen und Sperrungen von TomTom, feste Blitzer aus OSM (nur online), jeweils nur wenn fällig.
@@ -268,6 +381,10 @@ pub fn spawn(state: AppState) {
             poll_config(&s).await;
         }
     });
+    if let Some(addr) = state.boot.gpsd {
+        let s = state.clone();
+        tokio::spawn(async move { watch_gps(&s, addr).await });
+    }
     let s = state.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(SUCHLAGE_INTERVAL);
@@ -327,8 +444,86 @@ mod tests {
             label: "Uelzen".into(),
         };
         assert_eq!(nina_key(&region), "nina:031550000000");
-        assert_eq!(weather_key(&location), "weather:52.9656,10.5594");
+        assert_eq!(weather_key(&location), "weather:52.97,10.56");
         assert_eq!(incidents_key(&location), "tomtom:52.9656,10.5594");
+    }
+
+    async fn gps_state(addr: Option<SocketAddr>) -> AppState {
+        let boot = crate::config::BootConfig::from_lookup(move |k| {
+            (k == "LAGEMONITOR_GPSD").then(|| addr.map(|a| a.to_string()))?
+        })
+        .unwrap();
+        AppState::new(crate::db::test_pool().await, std::sync::Arc::new(boot)).await
+    }
+
+    #[tokio::test]
+    async fn gps_fix_becomes_location_and_no_fix_is_reported() {
+        use crate::sources::gpsd::tests::{FIX, NO_FIX, VERSION, fake_gpsd};
+        let addr = fake_gpsd(&[VERSION, NO_FIX, FIX, NO_FIX], Duration::ZERO).await;
+        let state = gps_state(Some(addr)).await;
+        let ended = follow_gps(&state, addr).await;
+        assert!(ended.to_string().contains("beendet"), "{ended}");
+        assert_eq!(
+            state.errors.read().await.get(GPS_KEY).map(String::as_str),
+            Some("kein GPS-Fix")
+        );
+
+        let cfg = settings::load(&state.pool).await.unwrap();
+        let loc = location(&state, &cfg).await;
+        assert_eq!((loc.lat, loc.lon), (52.963709, 10.577172));
+        assert_eq!(loc.label, cfg.location.label);
+
+        let view = crate::web::monitor::get(axum::extract::State(state))
+            .await
+            .unwrap()
+            .0;
+        let gps = view.gps.expect("gpsd eingestellt");
+        assert!(!gps.stale);
+        assert_eq!(gps.error.as_deref(), Some("kein GPS-Fix"));
+        assert_eq!(view.location, loc);
+    }
+
+    #[tokio::test]
+    async fn weather_falls_back_to_nearby_cell() {
+        let state = gps_state(None).await;
+        let at = |lat: f64, lon: f64| Location {
+            lat,
+            lon,
+            label: "x".into(),
+        };
+        // Zwei Zellen zurück (gut 2 km) liegt ein Stand, 60 km weg ein neuerer.
+        store::save(&state.pool, "weather:52.97,10.56", 1000, &1)
+            .await
+            .unwrap();
+        store::save(&state.pool, "weather:53.50,10.56", 2000, &2)
+            .await
+            .unwrap();
+        let here = at(52.99, 10.57);
+        assert_eq!(weather_key_near(&state, &here).await, "weather:52.97,10.56");
+        // Gibt es den eigenen, gilt er.
+        store::save(&state.pool, &weather_key(&here), 500, &3)
+            .await
+            .unwrap();
+        assert_eq!(weather_key_near(&state, &here).await, weather_key(&here));
+        // Weit weg nichts in der Nähe: der eigene Schlüssel, also kein Stand.
+        let far = at(48.1, 11.6);
+        assert_eq!(weather_key_near(&state, &far).await, weather_key(&far));
+    }
+
+    #[tokio::test]
+    async fn without_gpsd_old_fix_is_ignored() {
+        let state = gps_state(None).await;
+        let fix = Position { lat: 1.0, lon: 2.0 };
+        store::save(&state.pool, GPS_KEY, now_ms(), &fix)
+            .await
+            .unwrap();
+        let cfg = settings::load(&state.pool).await.unwrap();
+        assert_eq!(location(&state, &cfg).await, cfg.location);
+        let view = crate::web::monitor::get(axum::extract::State(state))
+            .await
+            .unwrap()
+            .0;
+        assert!(view.gps.is_none());
     }
 
     async fn state() -> AppState {

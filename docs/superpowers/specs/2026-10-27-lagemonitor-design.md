@@ -20,13 +20,13 @@ Warum jetzt und ohne Lifeline Hub: Lifeline Hub (LLH) ist in früher Alpha. Der 
 - Relevanzlogik: Warnungen rücken nach vorn, solange sie gelten
 - Drei Zustände wie in den Entwürfen: Ruhe, Warnung aktiv, Schaufenster (Tag der offenen Tür)
 - Admin-UI: Standort setzen, Widgets pinnen, ausblenden und sortieren, Widget-Parameter (Region, Warnschwelle), Schaufenster an und aus, Ansicht erzwingen
+- Standort automatisch per GPS des FüKw-Routers (TDT G3000-LW, gpsd, LGM-9); ohne Fix gilt der eingestellte Ort
 - Designsystem „Instrumententafel“ aus Lifeline Hub, wie in Suchlage übernommen
 
 **Später (nicht v1, aber Architektur darf es nicht verbauen)**
 - Lagemeldung als Freitext (nur sichtbar, wenn eingetragen)
 - Suchlage-Widget: UAV-Livebild und Sektoren, rückt bei aktivem Flug nach vorn
 - LLH-Widgets: Lagekarte mit Einsatzzeichen, Kräfte, Betroffene, ETB-Auszug (LLH-1484)
-- Standort automatisch per GPS des FüKw-Routers (Modell noch unbekannt)
 - Kräfte von Hand gepflegt, bis LLH sie liefert
 
 **Nicht-Ziele**
@@ -117,7 +117,6 @@ Es gelten die Regeln der Instrumententafel: Nacht ist Vorgabe, Radius 0, Haarlin
 
 ## 6. Offen
 
-- Router-Modell im FüKw: Davon hängt der automatische Standort ab
 - Bildschirmauflösung und GPU des Servers. Das sollte früh getestet werden, ob Chromium unter `cage` auf dieser Hardware sauber läuft.
 - Fireboard: Anfrage beim Hersteller, ob es einen Live-Leseweg gibt
 - Tailscale oder Cloudflare Tunnel: wird gerade getestet. Das Design deckt beide ab.

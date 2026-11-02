@@ -29,6 +29,7 @@ export function makeView(over: Partial<MonitorView> = {}): MonitorView {
   return {
     nowMs: NOW,
     location: { lat: 52.96, lon: 10.56, label: 'Uelzen' },
+    gps: null,
     region: { ars: '033600000000', name: 'Landkreis Uelzen' },
     warnThreshold: 'Severe',
     weather: {

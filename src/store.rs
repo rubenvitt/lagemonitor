@@ -25,6 +25,18 @@ pub async fn save(
     Ok(())
 }
 
+/// Schlüssel und Zeitpunkt aller Stände, deren Schlüssel mit `prefix` beginnt, der neueste zuerst.
+pub async fn sources_with_prefix(pool: &SqlitePool, prefix: &str) -> Vec<(String, i64)> {
+    sqlx::query_as(
+        "SELECT source, fetched_at_ms FROM snapshots WHERE substr(source, 1, length(?1)) = ?1
+         ORDER BY fetched_at_ms DESC",
+    )
+    .bind(prefix)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
+
 /// `None` ohne Stand. Ein nicht lesbarer Stand (z. B. nach einer Vertragsänderung) zählt wie keiner.
 pub async fn load<T: DeserializeOwned>(pool: &SqlitePool, source: &str) -> Option<(i64, T)> {
     let row: (i64, String) =

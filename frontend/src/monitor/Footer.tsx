@@ -20,6 +20,15 @@ function suchlageState({ suchlage }: MonitorView): { text: string; alert: boolea
   return { text: suchlage.data.mission ? 'Suchlage · Einsatz läuft' : 'Suchlage · kein Einsatz', alert: false };
 }
 
+/** Woher der Standort kommt, nur mit gpsd: Ohne Fix gilt der eingestellte Ort, ein alter Fix fällt auf. */
+function gpsState({ gps }: MonitorView): { text: string; alert: boolean } | null {
+  if (!gps) return null;
+  if (gps.data === null) return { text: 'GPS ohne Fix · Standort eingestellt', alert: true };
+  const at = gps.fetchedAtMs === null ? '–' : clock(gps.fetchedAtMs);
+  if (gps.stale) return { text: `Standort veraltet · GPS ${at}`, alert: true };
+  return { text: `Standort GPS · ${at}`, alert: false };
+}
+
 /** Verkehr nur, wenn eine Ebene an ist. Ein Fehler fällt auf, der Stand der Baustellen steht dabei. */
 function trafficState({ traffic }: MonitorView): { text: string; alert: boolean } | null {
   const { flow, flowError, incidents, speedCameras } = traffic;
@@ -40,7 +49,7 @@ function configState({ config }: MonitorView): { text: string; alert: boolean } 
 }
 
 export default function Footer({ view }: { view?: MonitorView }) {
-  const states = view ? [dataState(view), suchlageState(view), trafficState(view), configState(view)] : [];
+  const states = view ? [dataState(view), gpsState(view), suchlageState(view), trafficState(view), configState(view)] : [];
   return (
     <footer className="lm-fuss" data-theme="dark">
       {states.map(

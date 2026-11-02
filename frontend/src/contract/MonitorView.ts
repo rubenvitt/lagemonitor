@@ -4,6 +4,7 @@ import type { Location } from "./Location";
 import type { MapInfo } from "./MapInfo";
 import type { Modules } from "./Modules";
 import type { Notice } from "./Notice";
+import type { Position } from "./Position";
 import type { Recruitment } from "./Recruitment";
 import type { Region } from "./Region";
 import type { Severity } from "./Severity";
@@ -13,7 +14,15 @@ import type { TrafficView } from "./TrafficView";
 import type { Warning } from "./Warning";
 import type { Weather } from "./Weather";
 
-export type MonitorView = { nowMs: number, location: Location, region: Region, warnThreshold: Severity, weather: Sourced<Weather>, warnings: Sourced<Array<Warning>>, map: MapInfo, modules: Modules, config: ConfigState, 
+export type MonitorView = { nowMs: number, 
+/**
+ * Wo das Fahrzeug steht: der letzte GPS-Fix, sonst der eingestellte Ort (`poller::location`).
+ */
+location: Location, 
+/**
+ * Letzter GPS-Fix; `null`, wenn kein gpsd eingestellt ist. `data: null`: noch nie ein Fix.
+ */
+gps: Sourced<Position> | null, region: Region, warnThreshold: Severity, weather: Sourced<Weather>, warnings: Sourced<Array<Warning>>, map: MapInfo, modules: Modules, config: ConfigState, 
 /**
  * `null`, wenn das Modul aus oder Suchlage nicht verbunden ist.
  */

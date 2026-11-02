@@ -66,13 +66,15 @@ test('onset_null_sorts_last_within_severity', () => {
   expect(selectLayout(withWarnings([noOnset, withOnset]), NOW).band.map((w) => w.id)).toEqual(['mit', 'ohne']);
 });
 
-test('mark_stale_marks_both_sources', () => {
+test('mark_stale_marks_all_sources', () => {
   // Server nicht erreichbar: react-query behält den letzten Stand, der darf nicht mehr als frisch gelten.
-  const view = makeView();
+  const view = makeView({ gps: { data: { lat: 1, lon: 2 }, fetchedAtMs: NOW, stale: false, error: null } });
   expect(markStale(view, false)).toBe(view);
   const failed = markStale(view, true);
   expect(failed.warnings.stale).toBe(true);
   expect(failed.weather.stale).toBe(true);
+  expect(failed.gps?.stale).toBe(true);
+  expect(markStale(makeView(), true).gps).toBeNull();
   expect(selectLayout(failed, NOW).warnState).toBe('stale');
 });
 

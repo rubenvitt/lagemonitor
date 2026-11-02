@@ -8,6 +8,8 @@ services:
       # Verwaltung in der IUK-Suite (deploy/README.md, Schritt 9); leer = nur lokale Einstellungen.
       LAGEMONITOR_SUITE_URL: ${LAGEMONITOR_SUITE_URL:-}
       LAGEMONITOR_SUITE_TOKEN: ${LAGEMONITOR_SUITE_TOKEN:-}
+      # gpsd des Fahrzeugrouters (deploy/README.md, Schritt 9); leer = Standort nur aus den Einstellungen.
+      LAGEMONITOR_GPSD: ${LAGEMONITOR_GPSD:-}
     volumes:
       - ./data:/data
     restart: unless-stopped
