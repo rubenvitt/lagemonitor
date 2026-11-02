@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity};
+use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity, Vehicle};
 use crate::error::AppError;
 
 /// Verbindung zu Suchlage: Adresse und Großbild-Token, dazu, was vom Einsatz erscheint.
@@ -67,6 +67,8 @@ pub struct Settings {
     pub traffic: TrafficLink,
     /// Zoomstufe der Karte ohne Einsatz.
     pub map_zoom: f64,
+    /// Fahrzeuge mit ihrer letzten Position, Stand der letzten Abholung.
+    pub vehicles: Vec<Vehicle>,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -90,6 +92,7 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
         public_links: get(pool, "public_links").await?.unwrap_or_default(),
         traffic: get(pool, "traffic").await?.unwrap_or_default(),
         map_zoom: get(pool, "map_zoom").await?.unwrap_or(MAP_ZOOM_DEFAULT),
+        vehicles: get(pool, "vehicles").await?.unwrap_or_default(),
     })
 }
 
@@ -106,6 +109,7 @@ pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
         ("public_links", to_json(&s.public_links)?),
         ("traffic", to_json(&s.traffic)?),
         ("map_zoom", to_json(&s.map_zoom)?),
+        ("vehicles", to_json(&s.vehicles)?),
     ];
     let mut tx = pool.begin().await?;
     for (key, value) in rows {
@@ -162,6 +166,7 @@ mod tests {
         assert!(s.public_links.is_empty());
         assert_eq!(s.traffic, TrafficLink::default());
         assert_eq!(s.map_zoom, MAP_ZOOM_DEFAULT);
+        assert!(s.vehicles.is_empty());
     }
 
     #[tokio::test]

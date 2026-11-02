@@ -19,6 +19,8 @@ const WEATHER_STALE_MS: i64 = 45 * 60_000;
 const SUCHLAGE_STALE_MS: i64 = 20_000;
 /// gpsd meldet jede Sekunde, gespeichert wird alle 10 s: Eine Minute ohne Fix fällt auf.
 const GPS_STALE_MS: i64 = 60_000;
+/// Ein Fahrzeug ohne Meldung seit einem Tag verschwindet von der Karte (LGM-10, wie in der Suite).
+const VEHICLE_HIDDEN_MS: i64 = 24 * 60 * 60_000;
 /// Drei verpasste Abfragen; Baustellen ändern sich langsam, der Stand bleibt trotzdem sichtbar.
 const INCIDENTS_STALE_MS: i64 = 3 * poller::INCIDENTS_INTERVAL_MS;
 const SPEED_CAMERA_STALE_MS: i64 = 3 * poller::SPEED_CAMERA_INTERVAL_MS;
@@ -173,5 +175,11 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
             .collect(),
         recruitment: cfg.recruitment,
         traffic,
+        // Wie die Suite: nach einem Tag ohne Meldung ist ein Fahrzeug weg, auch ohne neue Abholung.
+        vehicles: cfg
+            .vehicles
+            .into_iter()
+            .filter(|v| now_ms - v.at_ms <= VEHICLE_HIDDEN_MS)
+            .collect(),
     }))
 }

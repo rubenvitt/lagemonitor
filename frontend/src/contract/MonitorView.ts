@@ -11,6 +11,7 @@ import type { Severity } from "./Severity";
 import type { Sourced } from "./Sourced";
 import type { SuchlageView } from "./SuchlageView";
 import type { TrafficView } from "./TrafficView";
+import type { Vehicle } from "./Vehicle";
 import type { Warning } from "./Warning";
 import type { Weather } from "./Weather";
 
@@ -34,4 +35,8 @@ notices: Array<Notice>,
 /**
  * `null`: kein QR-Code fürs Ehrenamt.
  */
-recruitment: Recruitment | null, traffic: TrafficView, };
+recruitment: Recruitment | null, traffic: TrafficView, 
+/**
+ * Fahrzeuge mit einer Position aus den letzten 24 Stunden.
+ */
+vehicles: Array<Vehicle>, };

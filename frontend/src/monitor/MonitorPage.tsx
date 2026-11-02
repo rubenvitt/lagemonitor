@@ -83,6 +83,7 @@ export default function MonitorPage() {
             nowMs={nowMs}
             incidents={traffic.incidents?.data ?? NONE}
             speedCameras={traffic.speedCameras?.data ?? NONE}
+            vehicles={view.vehicles}
             suchlage={einsatz}
             droneOpen={video !== null}
             sideColumn={sideColumn}

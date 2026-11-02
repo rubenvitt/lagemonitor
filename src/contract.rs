@@ -316,6 +316,24 @@ pub struct NoticeIcon {
     pub paths: Vec<String>,
 }
 
+/// Ein Fahrzeug aus der IUK-Suite mit seiner letzten gemeldeten Position (LGM-10).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub struct Vehicle {
+    pub id: String,
+    pub call_sign: String,
+    /// Taktisches Zeichen als eigenständiges SVG-Dokument; die Oberfläche zeigt es nur als `<img>`.
+    pub symbol: String,
+    pub lat: f64,
+    pub lon: f64,
+    /// Wann der Fix entstand.
+    #[ts(type = "number")]
+    pub at_ms: i64,
+    /// Das Fahrzeug dieses Monitors: die Karte zeichnet es am eigenen GPS-Fix, nicht an der Meldung.
+    pub own: bool,
+}
+
 /// QR-Code fürs Ehrenamt: wohin er führt und der Satz daneben. Nur `https://`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -403,6 +421,8 @@ pub struct MonitorView {
     /// `null`: kein QR-Code fürs Ehrenamt.
     pub recruitment: Option<Recruitment>,
     pub traffic: TrafficView,
+    /// Fahrzeuge mit einer Position aus den letzten 24 Stunden.
+    pub vehicles: Vec<Vehicle>,
 }
 
 #[cfg(test)]

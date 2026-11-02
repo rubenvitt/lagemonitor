@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Map as MapLibreMap, type ExpressionSpecification, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Map as MapLibreMap, Marker, type ExpressionSpecification, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
 import '../map/maplibreWorker';
 import { basemapStyle } from '../map/basemapStyle';
 import type { SpeedCamera } from '../contract/SpeedCamera';
 import type { SuchlageView } from '../contract/SuchlageView';
 import type { TrafficIncident } from '../contract/TrafficIncident';
+import type { Vehicle } from '../contract/Vehicle';
 import type { Warning } from '../contract/Warning';
 import { useThemeMode } from '../theme/ThemeModeProvider';
 import { farbenDunkel, farbenHell } from '../theme/tokens';
-import { incidentFeatures, radarTiles, speedCameraFeatures, trafficTiles, warningAreas } from './mapData';
+import { incidentFeatures, radarTiles, speedCameraFeatures, trafficTiles, vehicleMarks, warningAreas } from './mapData';
 import { aircraftPoints, areas, boundsKey, coloredTracks, coveredByDrone, suchlageBounds } from './suchlageData';
 
 interface Props {
@@ -29,6 +30,8 @@ interface Props {
   incidents: TrafficIncident[];
   /** Feste Blitzer (nur online); leer, wenn aus. */
   speedCameras: SpeedCamera[];
+  /** Fahrzeuge aus der Suite; das eigene steht am GPS-Fix (`lat`/`lon`) statt am Punkt. */
+  vehicles: Vehicle[];
   /** Laufender Suchlage-Einsatz; `null` ohne Einsatz oder mit Modul aus. */
   suchlage: SuchlageView | null;
   /** Das Drohnenbild ist eingefahren und verdeckt den rechten Rand. */
@@ -40,6 +43,9 @@ interface Props {
 }
 
 type Data = Parameters<GeoJSONSource['setData']>[0];
+
+/** Kantenlänge eines Fahrzeugzeichens; steht so auch in `monitor.css` (`.lm-fahrzeug img`). */
+const FAHRZEUG_PX = 44;
 
 /** Dünne Hülle um maplibre (läuft nicht in jsdom); die Logik steckt in `mapData.ts`. */
 export default function MapPanel({
@@ -54,6 +60,7 @@ export default function MapPanel({
   nowMs,
   incidents,
   speedCameras,
+  vehicles,
   suchlage,
   droneOpen,
   sideColumn,
@@ -225,6 +232,33 @@ export default function MapPanel({
     map.getSource<GeoJSONSource>('flugspuren')?.setData((suchlage ? coloredTracks(suchlage) : empty) as Data);
     map.getSource<GeoJSONSource>('drohnen')?.setData((suchlage ? aircraftPoints(suchlage.aircraft) : empty) as Data);
   }, [map, suchlage]);
+
+  // Fahrzeuge als HTML-Marker (Zeichen als `<img>`, Funkrufname darunter). Neu gesetzt nur, wenn sich etwas
+  // Sichtbares ändert; `map` in den Abhängigkeiten, weil eine neu gebaute Karte (Theme, Zoom) leer beginnt.
+  const marks = useMemo(() => vehicleMarks(vehicles, nowMs, { lat, lon }), [vehicles, nowMs, lat, lon]);
+  const marksKey = JSON.stringify(marks);
+  const ownShown = vehicles.some((v) => v.own);
+  useEffect(() => {
+    if (!map?.style) return;
+    const markers = marks.map((v) => {
+      const el = document.createElement('div');
+      el.className = 'lm-fahrzeug';
+      el.toggleAttribute('data-veraltet', v.stand !== null);
+      const img = document.createElement('img');
+      img.src = v.src;
+      img.alt = '';
+      const name = document.createElement('span');
+      name.textContent = v.stand ? `${v.callSign} · ${v.stand}` : v.callSign;
+      el.append(img, name);
+      // Oben verankert und um die halbe Zeichenhöhe hoch: die Mitte des Zeichens liegt auf der Position.
+      return new Marker({ element: el, anchor: 'top', offset: [0, -FAHRZEUG_PX / 2] }).setLngLat([v.lon, v.lat]).addTo(map);
+    });
+    // Das eigene Fahrzeug ersetzt den Standortpunkt.
+    for (const id of ['standort-punkt', 'standort-ring']) map.setLayoutProperty(id, 'visibility', ownShown ? 'none' : 'visible');
+    return () => markers.forEach((m) => m.remove());
+    // `marks` steckt in `marksKey`; ein neues Array je Abfrage soll die Marker nicht neu setzen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, marksKey, ownShown]);
 
   // Einpassen nur, wenn sich der Rahmen merklich ändert (neuer Einsatz, neues Gebiet) oder das
   // Drohnenbild ein- bzw. ausfährt – nicht bei jedem Spurpunkt.

@@ -175,6 +175,36 @@
   position: absolute;
   inset: 0;
 }
+/* Fahrzeuge (LGM-10): Zeichen mit Funkrufname darunter; veraltet ausgegraut, halb durchsichtig, mit Uhrzeit. */
+.lm-fahrzeug {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+.lm-fahrzeug img {
+  width: 44px;
+  height: 44px;
+}
+.lm-fahrzeug span {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--lfh-flaeche);
+  color: var(--lfh-text);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lm-fahrzeug[data-veraltet] {
+  opacity: 0.55;
+}
+.lm-fahrzeug[data-veraltet] img {
+  filter: grayscale(1);
+}
+.lm-fahrzeug[data-veraltet] span {
+  color: var(--lfh-gedaempft);
+}
 
 /* ── Wetter ───────────────────────────────────────────────────────────── */
 .lm-wetter-jetzt {
