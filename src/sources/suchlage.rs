@@ -16,7 +16,10 @@ pub const API_VERSION: u32 = 1;
 struct Lage {
     api_version: u32,
     mission: Option<Mission>,
-    map: FeatureCollection,
+    /// Fehlt, wenn mit `?karte=` gefragt wurde und sie unverändert ist (Suchlage `LmLage::map`).
+    map: Option<FeatureCollection>,
+    /// Fassung der Karte; ein älteres Suchlage kennt sie nicht.
+    map_etag: Option<String>,
     aircraft: Vec<Aircraft>,
     videos: Vec<Video>,
 }
@@ -82,8 +85,56 @@ fn collection(features: Vec<Value>) -> Value {
     json!({ "type": "FeatureCollection", "features": features })
 }
 
+/// Die Karte der letzten Antwort samt Fassung: Kommt die nächste ohne Karte, gilt diese weiter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KnownMap {
+    pub etag: String,
+    pub areas: Value,
+    pub tracks: Value,
+}
+
+/// Wie viel Karte eine Abfrage haben will (`?karte=`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum MapWish {
+    /// Ganz, wie ein Lagemonitor ohne Fassung fragt.
+    Full,
+    /// Nur, wenn sie sich seit dieser Fassung geändert hat.
+    IfChanged(String),
+    /// Gar nicht: nur Drohnen und Livebild.
+    None,
+}
+
+impl MapWish {
+    fn query(&self) -> Option<&str> {
+        match self {
+            MapWish::Full => None,
+            MapWish::IfChanged(etag) => Some(etag),
+            MapWish::None => Some("aus"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Fetched {
+    pub view: SuchlageView,
+    /// `None` ohne Einsatz oder bei einem Suchlage ohne `map_etag`: dann fragt die nächste
+    /// Abfrage wieder nach der ganzen Karte.
+    pub map: Option<KnownMap>,
+    /// Kam die Karte (oder die Bestätigung, dass sie unverändert ist) mit dieser Antwort?
+    pub map_checked: bool,
+}
+
 /// Liest die Antwort und lässt weg, was ausgeschaltet ist. Ohne laufenden Einsatz ist alles leer.
 pub fn parse(body: &[u8], link: &SuchlageLink) -> Result<SuchlageView, SourceError> {
+    parse_with(body, link, None).map(|f| f.view)
+}
+
+/// Wie [`parse`]; fehlt die Karte in der Antwort, kommt sie aus `known`.
+pub fn parse_with(
+    body: &[u8],
+    link: &SuchlageLink,
+    known: Option<&KnownMap>,
+) -> Result<Fetched, SourceError> {
     let lage: Lage =
         serde_json::from_slice(body).map_err(|e| SourceError::Parse(format!("Suchlage: {e}")))?;
     if lage.api_version != API_VERSION {
@@ -93,16 +144,50 @@ pub fn parse(body: &[u8], link: &SuchlageLink) -> Result<SuchlageView, SourceErr
         )));
     }
     let Some(mission) = lage.mission else {
-        return Ok(SuchlageView {
-            mission: None,
-            areas: collection(Vec::new()),
-            tracks: collection(Vec::new()),
-            aircraft: Vec::new(),
-            video: None,
+        return Ok(Fetched {
+            view: SuchlageView {
+                mission: None,
+                areas: collection(Vec::new()),
+                tracks: collection(Vec::new()),
+                aircraft: Vec::new(),
+                video: None,
+            },
+            map: None,
+            map_checked: true,
         });
     };
+    let (areas, tracks, map, map_checked) = match (lage.map, known) {
+        (Some(fc), _) => {
+            let (areas, tracks) = split_map(fc, link);
+            let map = lage.map_etag.map(|etag| KnownMap {
+                etag,
+                areas: areas.clone(),
+                tracks: tracks.clone(),
+            });
+            (areas, tracks, map, true)
+        }
+        (None, Some(k)) => {
+            // Bestätigt nur, wenn Suchlage dieselbe Fassung nennt; sonst war es `?karte=aus`.
+            let checked = lage.map_etag.as_deref() == Some(k.etag.as_str());
+            (k.areas.clone(), k.tracks.clone(), Some(k.clone()), checked)
+        }
+        (None, None) => {
+            return Err(SourceError::Parse(
+                "Suchlage: Karte fehlt, ohne dass eine bekannt ist".into(),
+            ));
+        }
+    };
+    Ok(Fetched {
+        view: view(mission, areas, tracks, lage.aircraft, lage.videos, link),
+        map,
+        map_checked,
+    })
+}
+
+/// Gebiete und Flugspuren, ohne was ausgeschaltet ist.
+fn split_map(fc: FeatureCollection, link: &SuchlageLink) -> (Value, Value) {
     let (mut areas, mut tracks) = (Vec::new(), Vec::new());
-    for f in lage.map.features {
+    for f in fc.features {
         match f.properties {
             Properties::MapElement { name, color } if link.areas => areas.push(json!({
                 "type": "Feature", "geometry": f.geometry,
@@ -118,17 +203,27 @@ pub fn parse(body: &[u8], link: &SuchlageLink) -> Result<SuchlageView, SourceErr
             _ => {}
         }
     }
-    Ok(SuchlageView {
+    (collection(areas), collection(tracks))
+}
+
+fn view(
+    mission: Mission,
+    areas: Value,
+    tracks: Value,
+    aircraft: Vec<Aircraft>,
+    videos: Vec<Video>,
+    link: &SuchlageLink,
+) -> SuchlageView {
+    SuchlageView {
         mission: Some(SuchlageMission {
             name: mission.name,
             location: mission.location,
             section: mission.section,
             started_at_ms: mission.started_at_ms,
         }),
-        areas: collection(areas),
-        tracks: collection(tracks),
-        aircraft: lage
-            .aircraft
+        areas,
+        tracks,
+        aircraft: aircraft
             .into_iter()
             .map(|a| SuchlageAircraft {
                 gateway_sn: a.gateway_sn,
@@ -143,13 +238,13 @@ pub fn parse(body: &[u8], link: &SuchlageLink) -> Result<SuchlageView, SourceErr
             .collect(),
         video: link
             .video
-            .then(|| lage.videos.into_iter().next())
+            .then(|| videos.into_iter().next())
             .flatten()
             .map(|v| SuchlageVideo {
                 gateway_sn: v.gateway_sn,
                 label: v.label,
             }),
-    })
+    }
 }
 
 pub fn base(link: &SuchlageLink) -> Result<Url, SourceError> {
@@ -163,9 +258,15 @@ pub fn base(link: &SuchlageLink) -> Result<Url, SourceError> {
 pub async fn fetch(
     http: &reqwest::Client,
     link: &SuchlageLink,
-) -> Result<SuchlageView, SourceError> {
-    let body = get_bytes_as(http, endpoint(&base(link)?, "lage")?, Some(&link.token)).await?;
-    parse(&body, link)
+    wish: &MapWish,
+    known: Option<&KnownMap>,
+) -> Result<Fetched, SourceError> {
+    let mut url = endpoint(&base(link)?, "lage")?;
+    if let Some(karte) = wish.query() {
+        url.query_pairs_mut().append_pair("karte", karte);
+    }
+    let body = get_bytes_as(http, url, Some(&link.token)).await?;
+    parse_with(&body, link, known)
 }
 
 #[cfg(test)]
@@ -244,6 +345,63 @@ pub(crate) mod tests {
         let v = parse(body.as_bytes(), &link()).unwrap();
         assert_eq!(count(&v.areas), 0);
         assert_eq!(count(&v.tracks), 1);
+    }
+
+    fn with_etag(etag: &str) -> String {
+        RUNNING.replacen(
+            "\"aircraft\"",
+            &format!("\"map_etag\": \"{etag}\", \"aircraft\""),
+            1,
+        )
+    }
+
+    fn without_map(etag: &str) -> String {
+        let mut v: Value = serde_json::from_str(&with_etag(etag)).unwrap();
+        v.as_object_mut().unwrap().remove("map");
+        v.to_string()
+    }
+
+    #[test]
+    fn a_map_with_etag_is_remembered() {
+        let f = parse_with(with_etag("e1").as_bytes(), &link(), None).unwrap();
+        let map = f.map.unwrap();
+        assert_eq!(map.etag, "e1");
+        assert_eq!(count(&map.areas), 1);
+        assert_eq!(count(&f.view.tracks), 1);
+        assert!(f.map_checked);
+    }
+
+    #[test]
+    fn an_old_suchlage_without_etag_still_shows_the_map() {
+        let f = parse_with(RUNNING.as_bytes(), &link(), None).unwrap();
+        assert!(
+            f.map.is_none(),
+            "ohne Fassung fragt die nächste Abfrage wieder ganz"
+        );
+        assert_eq!(count(&f.view.areas), 1);
+    }
+
+    #[test]
+    fn a_missing_map_comes_from_the_known_one() {
+        let known = parse_with(with_etag("e1").as_bytes(), &link(), None)
+            .unwrap()
+            .map
+            .unwrap();
+        let f = parse_with(without_map("e1").as_bytes(), &link(), Some(&known)).unwrap();
+        assert_eq!(f.view.areas, known.areas);
+        assert!(f.map_checked, "gleiche Fassung: geprüft und unverändert");
+        // `?karte=aus`: Suchlage nennt die aktuelle Fassung, die Karte bleibt die alte.
+        let f = parse_with(without_map("e2").as_bytes(), &link(), Some(&known)).unwrap();
+        assert_eq!(f.view.tracks, known.tracks);
+        assert!(!f.map_checked);
+        assert!(parse_with(without_map("e1").as_bytes(), &link(), None).is_err());
+    }
+
+    #[test]
+    fn the_wish_becomes_the_query() {
+        assert_eq!(MapWish::Full.query(), None);
+        assert_eq!(MapWish::IfChanged("e1".into()).query(), Some("e1"));
+        assert_eq!(MapWish::None.query(), Some("aus"));
     }
 
     #[test]

@@ -17,6 +17,8 @@ const NINA_STALE_MS: i64 = 5 * 60_000;
 const WEATHER_STALE_MS: i64 = 45 * 60_000;
 /// Drei verpasste Abfragen à 5 s.
 const SUCHLAGE_STALE_MS: i64 = 20_000;
+/// Ohne Einsatz fragt der Server nur alle 30 s (`poller::SUCHLAGE_IDLE_EVERY_MS`): drei verpasste.
+const SUCHLAGE_IDLE_STALE_MS: i64 = 3 * poller::SUCHLAGE_IDLE_EVERY_MS;
 /// gpsd meldet jede Sekunde, gespeichert wird alle 10 s: Eine Minute ohne Fix fällt auf.
 const GPS_STALE_MS: i64 = 60_000;
 /// Ein Fahrzeug ohne Meldung seit einem Tag verschwindet von der Karte (LGM-10, wie in der Suite).
@@ -64,12 +66,19 @@ async fn suchlage(
         .clone()
         .filter(|s| s.url == link.url);
     Some(match snapshot {
-        Some(s) => Sourced {
-            data: Some(s.view),
-            fetched_at_ms: Some(s.fetched_at_ms),
-            stale: now_ms - s.fetched_at_ms > SUCHLAGE_STALE_MS,
-            error,
-        },
+        Some(s) => {
+            let max_age = if s.view.mission.is_some() {
+                SUCHLAGE_STALE_MS
+            } else {
+                SUCHLAGE_IDLE_STALE_MS
+            };
+            Sourced {
+                stale: now_ms - s.fetched_at_ms > max_age,
+                fetched_at_ms: Some(s.fetched_at_ms),
+                data: Some(s.view),
+                error,
+            }
+        }
         None => Sourced {
             data: None,
             fetched_at_ms: None,

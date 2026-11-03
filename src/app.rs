@@ -51,6 +51,12 @@ pub struct SuchlageSnapshot {
     pub url: String,
     pub fetched_at_ms: i64,
     pub view: crate::contract::SuchlageView,
+    /// Gebiete und Flugspuren mit Fassung, gefiltert nach `areas`/`tracks` zum Zeitpunkt des Abrufs.
+    pub map: Option<crate::sources::suchlage::KnownMap>,
+    /// Zuletzt nach der Karte gefragt (`poller::SUCHLAGE_MAP_EVERY_MS`).
+    pub map_checked_ms: i64,
+    /// `(areas, tracks)` der Verbindung beim Abruf: ändert sich das, gilt `map` nicht mehr.
+    pub map_filter: (bool, bool),
 }
 
 impl AppState {
@@ -546,6 +552,59 @@ mod tests {
             !json.to_string().contains("geheim"),
             "Der Token bleibt auf dem Server"
         );
+    }
+
+    #[tokio::test]
+    async fn without_a_mission_suchlage_is_asked_only_every_30_s() {
+        let base = fake_suite_and_suchlage().await;
+        let state = suite_state(base.clone(), "suite").await;
+        crate::poller::poll_config(&state).await;
+        let idle = |fetched_at_ms| {
+            SuchlageSnapshot {
+            url: base.as_str().trim_end_matches('/').to_string(),
+            fetched_at_ms,
+            view: crate::sources::suchlage::parse(
+                br#"{"api_version":1,"mission":null,"map":{"features":[]},"aircraft":[],"videos":[]}"#,
+                &crate::sources::suchlage::tests::link(),
+            )
+            .unwrap(),
+            map: None,
+            map_checked_ms: 0,
+            map_filter: (true, true),
+        }
+        };
+        let url = crate::settings::load(&state.pool)
+            .await
+            .unwrap()
+            .suchlage
+            .unwrap()
+            .url;
+        let now = crate::poller::now_ms();
+        *state.suchlage.write().await = Some(SuchlageSnapshot {
+            url: url.clone(),
+            ..idle(now)
+        });
+        crate::poller::poll_suchlage(&state).await;
+        let mission = |s: &AppState| {
+            let s = s.clone();
+            async move {
+                s.suchlage
+                    .read()
+                    .await
+                    .as_ref()
+                    .unwrap()
+                    .view
+                    .mission
+                    .clone()
+            }
+        };
+        assert!(mission(&state).await.is_none(), "gerade erst gefragt");
+        *state.suchlage.write().await = Some(SuchlageSnapshot {
+            url,
+            ..idle(now - crate::poller::SUCHLAGE_IDLE_EVERY_MS)
+        });
+        crate::poller::poll_suchlage(&state).await;
+        assert!(mission(&state).await.is_some());
     }
 
     #[tokio::test]

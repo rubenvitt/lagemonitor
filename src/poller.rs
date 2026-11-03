@@ -27,6 +27,12 @@ const GPS_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const GPS_SAVE_EVERY_MS: i64 = 10_000;
 pub const CONFIG_INTERVAL: Duration = Duration::from_secs(60);
 pub const SUCHLAGE_INTERVAL: Duration = Duration::from_secs(5);
+/// Ohne laufenden Einsatz reicht alle 30 s: Ein neuer Einsatz erscheint so spätestens nach einer
+/// halben Minute, und die Abfragen im Leerlauf (den größten Teil des Tages) sinken auf ein Sechstel.
+pub const SUCHLAGE_IDLE_EVERY_MS: i64 = 30_000;
+/// Gebiete und Flugspuren höchstens alle 30 s und nur bei einer Änderung; die Drohnen kommen
+/// weiter alle 5 s. Die Spur hinter einer fliegenden Drohne hängt so bis zu 30 s nach.
+pub const SUCHLAGE_MAP_EVERY_MS: i64 = 30_000;
 /// Takt, in dem nachgesehen wird, ob ein Verkehrs-Stand fällig ist; abgefragt wird viel seltener.
 pub const TRAFFIC_TICK: Duration = Duration::from_secs(60);
 /// Störungen stündlich: 2 Instanzen × 24 × 31 = 1.488 von 2.500 Abfragen im Monat (`sources::tomtom`).
@@ -169,7 +175,7 @@ async fn load_settings(state: &AppState) -> Option<settings::Settings> {
         .ok()
 }
 
-fn now_ms() -> i64 {
+pub fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
 
@@ -358,13 +364,38 @@ pub async fn poll_suchlage(state: &AppState) {
             return;
         }
     };
+    let now = now_ms();
+    let filter = (link.areas, link.tracks);
+    let previous = state
+        .suchlage
+        .read()
+        .await
+        .clone()
+        .filter(|p| p.url == link.url);
+    let (wish, known) = match &previous {
+        Some(p) => {
+            if p.view.mission.is_none() && now - p.fetched_at_ms < SUCHLAGE_IDLE_EVERY_MS {
+                return;
+            }
+            suchlage_map_wish(p, filter, now)
+        }
+        None => (suchlage::MapWish::Full, None),
+    };
     let (http, l) = (state.http.clone(), link.clone());
-    let outcome = match tokio::spawn(async move { suchlage::fetch(&http, &l).await }).await {
-        Ok(Ok(view)) => {
+    let fetch = async move { suchlage::fetch(&http, &l, &wish, known.as_ref()).await };
+    let outcome = match tokio::spawn(fetch).await {
+        Ok(Ok(fetched)) => {
+            let map_checked_ms = match &previous {
+                Some(p) if !fetched.map_checked => p.map_checked_ms,
+                _ => now,
+            };
             *state.suchlage.write().await = Some(SuchlageSnapshot {
                 url: link.url,
-                fetched_at_ms: now_ms(),
-                view,
+                fetched_at_ms: now,
+                view: fetched.view,
+                map: fetched.map,
+                map_checked_ms,
+                map_filter: filter,
             });
             Ok(())
         }
@@ -382,6 +413,26 @@ pub async fn poll_suchlage(state: &AppState) {
         Ok(()) => errors.remove(SUCHLAGE_KEY),
         Err(m) => errors.insert(SUCHLAGE_KEY.to_string(), m),
     };
+}
+
+/// Was die nächste Suchlage-Abfrage an Karte will. Ohne bekannte Fassung oder nach geänderten
+/// Schaltern die ganze, sonst alle `SUCHLAGE_MAP_EVERY_MS` nur bei Änderung, dazwischen keine.
+pub fn suchlage_map_wish(
+    previous: &SuchlageSnapshot,
+    filter: (bool, bool),
+    now_ms: i64,
+) -> (suchlage::MapWish, Option<suchlage::KnownMap>) {
+    match &previous.map {
+        Some(map) if previous.map_filter == filter => {
+            let wish = if now_ms - previous.map_checked_ms < SUCHLAGE_MAP_EVERY_MS {
+                suchlage::MapWish::None
+            } else {
+                suchlage::MapWish::IfChanged(map.etag.clone())
+            };
+            (wish, Some(map.clone()))
+        }
+        _ => (suchlage::MapWish::Full, None),
+    }
 }
 
 pub fn spawn(state: AppState) {
@@ -443,6 +494,43 @@ pub fn spawn(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_map_is_asked_for_rarely_and_only_if_changed() {
+        let known = suchlage::KnownMap {
+            etag: "e1".into(),
+            areas: serde_json::json!({}),
+            tracks: serde_json::json!({}),
+        };
+        let snap = |map: Option<suchlage::KnownMap>, checked| SuchlageSnapshot {
+            url: "u".into(),
+            fetched_at_ms: 0,
+            view: suchlage::parse(
+                suchlage::tests::RUNNING.as_bytes(),
+                &suchlage::tests::link(),
+            )
+            .unwrap(),
+            map,
+            map_checked_ms: checked,
+            map_filter: (true, true),
+        };
+        let wish = |s: &SuchlageSnapshot, filter, now| suchlage_map_wish(s, filter, now).0;
+        assert_eq!(
+            wish(&snap(None, 0), (true, true), 1),
+            suchlage::MapWish::Full
+        );
+        let s = snap(Some(known), 1_000);
+        assert_eq!(wish(&s, (true, true), 2_000), suchlage::MapWish::None);
+        assert_eq!(
+            wish(&s, (true, true), 1_000 + SUCHLAGE_MAP_EVERY_MS),
+            suchlage::MapWish::IfChanged("e1".into())
+        );
+        assert_eq!(
+            wish(&s, (true, false), 2_000),
+            suchlage::MapWish::Full,
+            "Schalter geändert"
+        );
+    }
 
     #[test]
     fn keys_carry_parameters() {
