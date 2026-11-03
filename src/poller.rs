@@ -316,17 +316,34 @@ async fn own_position(state: &AppState) -> Option<String> {
 
 const OWN_POSITION_MAX_AGE_S: i64 = 24 * 60 * 60;
 
+/// ETag der Suite-Konfiguration samt der Suite, von der er stammt.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ConfigEtag {
+    scope: String,
+    etag: String,
+}
+
+/// Kennung der Suite aus Adresse und Schlüssel; der Schlüssel landet nur gehasht in der Datenbank.
+pub fn config_etag_scope(link: &crate::config::SuiteLink) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(format!("{}\n{}", link.url, link.token).as_bytes());
+    hex::encode(&digest[..8])
+}
+
 pub async fn poll_config(state: &AppState) {
     let Some(link) = state.boot.suite.clone() else {
         return;
     };
     let position = own_position(state).await;
-    // Ohne gespeicherten Stand (frische Datenbank) zählt ein alter ETag nicht.
+    // Ohne gespeicherten Stand (frische Datenbank) zählt ein alter ETag nicht, und für eine andere
+    // Suite (Adresse oder Schlüssel geändert) auch nicht.
+    let scope = config_etag_scope(&link);
     let etag = match store::fetched_at(&state.pool, CONFIG_KEY).await {
-        Some(_) => store::load::<String>(&state.pool, CONFIG_ETAG_KEY)
+        Some(_) => store::load::<ConfigEtag>(&state.pool, CONFIG_ETAG_KEY)
             .await
             .map(|(_, e)| e)
-            .filter(|e| !e.is_empty()),
+            .filter(|e| e.scope == scope && !e.etag.is_empty())
+            .map(|e| e.etag),
         None => None,
     };
     let http = state.http.clone();
@@ -343,7 +360,10 @@ pub async fn poll_config(state: &AppState) {
         Ok(Ok(suite::Fetched::Changed(cfg, new_etag))) => {
             match settings::save(&state.pool, &cfg).await {
                 Ok(()) => {
-                    let etag = new_etag.unwrap_or_default();
+                    let etag = ConfigEtag {
+                        scope,
+                        etag: new_etag.unwrap_or_default(),
+                    };
                     saved(store::save(&state.pool, CONFIG_ETAG_KEY, now_ms(), &etag).await).and(
                         saved(store::save(&state.pool, CONFIG_KEY, now_ms(), &()).await),
                     )
@@ -408,10 +428,12 @@ pub async fn poll_suchlage(state: &AppState) {
     let fetch = async move { suchlage::fetch(&http, &l, &wish, known.as_ref()).await };
     let outcome = match tokio::spawn(fetch).await {
         Ok(Ok(fetched)) => {
-            let map_checked_ms = match &previous {
-                Some(p) if !fetched.map_checked => p.map_checked_ms,
-                _ => now,
-            };
+            let map_checked_ms = map_checked_after(
+                previous.as_ref(),
+                fetched.view.mission.as_ref(),
+                fetched.map_checked,
+                now,
+            );
             *state.suchlage.write().await = Some(SuchlageSnapshot {
                 url: link.url,
                 fetched_at_ms: now,
@@ -440,6 +462,22 @@ pub async fn poll_suchlage(state: &AppState) {
 
 /// Was die nächste Suchlage-Abfrage an Karte will. Ohne bekannte Fassung oder nach geänderten
 /// Schaltern die ganze, sonst alle `SUCHLAGE_MAP_EVERY_MS` nur bei Änderung, dazwischen keine.
+/// Wann die Karte zuletzt geprüft war. Wechselt der Einsatz, ohne dass die Karte mitkam, gilt sie
+/// als ungeprüft: Die nächste Abfrage fragt nach ihr, statt die alte Karte 30 s stehen zu lassen.
+/// Eine bloß neuere Fassung im selben Einsatz (wachsende Flugspur) wartet dagegen den Takt ab.
+pub fn map_checked_after(
+    previous: Option<&SuchlageSnapshot>,
+    mission: Option<&crate::contract::SuchlageMission>,
+    map_checked: bool,
+    now_ms: i64,
+) -> i64 {
+    match previous {
+        _ if map_checked => now_ms,
+        Some(p) if p.view.mission.as_ref() == mission => p.map_checked_ms,
+        _ => now_ms - SUCHLAGE_MAP_EVERY_MS,
+    }
+}
+
 pub fn suchlage_map_wish(
     previous: &SuchlageSnapshot,
     filter: (bool, bool),
@@ -552,6 +590,29 @@ mod tests {
             wish(&s, (true, false), 2_000),
             suchlage::MapWish::Full,
             "Schalter geändert"
+        );
+        let mission = s.view.mission.clone();
+        assert_eq!(
+            map_checked_after(Some(&s), mission.as_ref(), false, 2_000),
+            1_000
+        );
+        assert_eq!(
+            map_checked_after(Some(&s), mission.as_ref(), true, 2_000),
+            2_000
+        );
+        let other = mission.map(|m| crate::contract::SuchlageMission {
+            name: "Neuer Einsatz".into(),
+            ..m
+        });
+        let checked = map_checked_after(Some(&s), other.as_ref(), false, 2_000);
+        let s = SuchlageSnapshot {
+            map_checked_ms: checked,
+            ..s
+        };
+        assert_eq!(
+            wish(&s, (true, true), 2_000 + 5_000),
+            suchlage::MapWish::IfChanged("e1".into()),
+            "neuer Einsatz: Karte gleich nachfragen"
         );
     }
 

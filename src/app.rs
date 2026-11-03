@@ -566,6 +566,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn another_suite_does_not_get_the_old_etag() {
+        use axum::http::HeaderMap;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let conditional = Arc::new(AtomicUsize::new(0));
+        let seen = conditional.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base: reqwest::Url = format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let app = Router::new().route(
+            "/api/konfiguration",
+            get(move |h: HeaderMap| {
+                let seen = seen.clone();
+                async move {
+                    if h.get("if-none-match").is_some_and(|v| v == "\"v1\"") {
+                        seen.fetch_add(1, Ordering::SeqCst);
+                        StatusCode::NOT_MODIFIED.into_response()
+                    } else {
+                        let body = crate::sources::suite::tests::EXAMPLE;
+                        (StatusCode::OK, [("etag", "\"v1\"")], body).into_response()
+                    }
+                }
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let first = suite_state(base.clone(), "a").await;
+        crate::poller::poll_config(&first).await;
+        crate::poller::poll_config(&first).await;
+        assert_eq!(conditional.load(Ordering::SeqCst), 1);
+        let mut boot = BootConfig::from_lookup(|_| None).unwrap();
+        boot.suite = Some(crate::config::SuiteLink {
+            url: base,
+            token: "b".into(),
+        });
+        let second = AppState::new(first.pool.clone(), Arc::new(boot)).await;
+        crate::poller::poll_config(&second).await;
+        assert_eq!(conditional.load(Ordering::SeqCst), 1);
+        crate::poller::poll_config(&second).await;
+        assert_eq!(conditional.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn without_a_mission_suchlage_is_asked_only_every_30_s() {
         let base = fake_suite_and_suchlage().await;
         let state = suite_state(base.clone(), "suite").await;
