@@ -44,6 +44,8 @@ pub const TRAFFIC_RETRY_MS: i64 = 15 * 60_000;
 
 /// Stand-Schlüssel der Konfiguration aus der Suite (nur Zeitpunkt, die Werte stehen in `settings`).
 pub const CONFIG_KEY: &str = "suite-config";
+/// `ETag` der zuletzt gespeicherten Konfiguration (`suite::fetch`).
+pub const CONFIG_ETAG_KEY: &str = "suite-config-etag";
 pub const SUCHLAGE_KEY: &str = "suchlage";
 /// Letzter GPS-Fix (`Position`).
 pub const GPS_KEY: &str = "gps";
@@ -319,21 +321,42 @@ pub async fn poll_config(state: &AppState) {
         return;
     };
     let position = own_position(state).await;
+    // Ohne gespeicherten Stand (frische Datenbank) zählt ein alter ETag nicht.
+    let etag = match store::fetched_at(&state.pool, CONFIG_KEY).await {
+        Some(_) => store::load::<String>(&state.pool, CONFIG_ETAG_KEY)
+            .await
+            .map(|(_, e)| e)
+            .filter(|e| !e.is_empty()),
+        None => None,
+    };
     let http = state.http.clone();
-    let fetched = tokio::spawn(async move { suite::fetch(&http, &link, position).await }).await;
+    let fetched =
+        tokio::spawn(async move { suite::fetch(&http, &link, position, etag.as_deref()).await })
+            .await;
+    let saved = |r: Result<(), crate::error::AppError>| {
+        r.map_err(|e| {
+            tracing::warn!(error = ?e, "Stand der Konfiguration nicht gespeichert");
+            "Speichern fehlgeschlagen".to_string()
+        })
+    };
     let outcome = match fetched {
-        Ok(Ok(cfg)) => match settings::save(&state.pool, &cfg).await {
-            Ok(()) => store::save(&state.pool, CONFIG_KEY, now_ms(), &())
-                .await
-                .map_err(|e| {
-                    tracing::warn!(error = ?e, "Stand der Konfiguration nicht gespeichert");
-                    "Speichern fehlgeschlagen".to_string()
-                }),
-            Err(e) => {
-                tracing::warn!(error = ?e, "Konfiguration nicht gespeichert");
-                Err("Speichern fehlgeschlagen".to_string())
+        Ok(Ok(suite::Fetched::Changed(cfg, new_etag))) => {
+            match settings::save(&state.pool, &cfg).await {
+                Ok(()) => {
+                    let etag = new_etag.unwrap_or_default();
+                    saved(store::save(&state.pool, CONFIG_ETAG_KEY, now_ms(), &etag).await).and(
+                        saved(store::save(&state.pool, CONFIG_KEY, now_ms(), &()).await),
+                    )
+                }
+                Err(e) => {
+                    tracing::warn!(error = ?e, "Konfiguration nicht gespeichert");
+                    Err("Speichern fehlgeschlagen".to_string())
+                }
             }
-        },
+        }
+        Ok(Ok(suite::Fetched::Unchanged)) => {
+            saved(store::save(&state.pool, CONFIG_KEY, now_ms(), &()).await)
+        }
         Ok(Err(e)) => {
             tracing::warn!(error = %e, "Konfiguration nicht abgeholt");
             Err(e.to_string())

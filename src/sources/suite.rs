@@ -5,7 +5,7 @@
 use reqwest::Url;
 use serde::Deserialize;
 
-use super::{SourceError, endpoint, send_bytes};
+use super::{SourceError, endpoint};
 use crate::config::SuiteLink;
 use crate::contract::{
     Location, Modules, Notice, NoticeCategory, NoticeColor, NoticeIcon, Position, Recruitment,
@@ -275,18 +275,53 @@ pub fn position_header(p: &Position, age_s: i64) -> String {
     format!("{:.6},{:.6},{}", p.lat, p.lon, age_s.max(0))
 }
 
+/// Antwort der Suite auf eine Abholung.
+#[derive(Debug)]
+pub enum Fetched {
+    /// Neue Einstellungen samt ihrem `ETag` (fehlt bei einer Suite ohne).
+    Changed(Box<Settings>, Option<String>),
+    /// 304: seit dem mitgeschickten `ETag` unverändert.
+    Unchanged,
+}
+
 /// Holt die Konfiguration; `position` ist der letzte Fix samt Alter, wenn dieser Monitor ein GPS hat.
+/// Mit `etag` aus der letzten Abholung antwortet die Suite meist nur mit 304 ohne Körper: Sie wird
+/// jede Minute gefragt, geändert wird selten. Die Position kommt auch dann an.
 pub async fn fetch(
     http: &reqwest::Client,
     link: &SuiteLink,
     position: Option<String>,
-) -> Result<Settings, SourceError> {
+    etag: Option<&str>,
+) -> Result<Fetched, SourceError> {
     let url = config_url(link)?;
     let mut req = http.get(url.clone()).bearer_auth(&link.token);
     if let Some(p) = position {
         req = req.header(POSITION_HEADER, p);
     }
-    parse(&send_bytes(req, &url).await?)
+    if let Some(e) = etag {
+        req = req.header(reqwest::header::IF_NONE_MATCH, e);
+    }
+    let res = req
+        .timeout(super::TIMEOUT)
+        .send()
+        .await
+        .map_err(|e| SourceError::Http(format!("{url}: {e}")))?;
+    if res.status() == reqwest::StatusCode::NOT_MODIFIED {
+        return Ok(Fetched::Unchanged);
+    }
+    let res = res
+        .error_for_status()
+        .map_err(|e| SourceError::Http(format!("{url}: {e}")))?;
+    let new_etag = res
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let body = res
+        .bytes()
+        .await
+        .map_err(|e| SourceError::Http(format!("{url}: {e}")))?;
+    Ok(Fetched::Changed(Box::new(parse(&body)?), new_etag))
 }
 
 #[cfg(test)]
@@ -513,5 +548,48 @@ pub(crate) mod tests {
             config_url(&link).unwrap().as_str(),
             "https://iuk-ue.de/m/lagemonitor/api/konfiguration"
         );
+    }
+
+    /// Suite-Attrappe mit `ETag "v1"`: 304 bei passendem `If-None-Match`, sonst `EXAMPLE`.
+    async fn etag_suite() -> SuiteLink {
+        use axum::http::{HeaderMap, StatusCode, header};
+        use axum::response::IntoResponse;
+        let app = axum::Router::new().route(
+            "/api/konfiguration",
+            axum::routing::get(|h: HeaderMap| async move {
+                if h.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some("\"v1\"") {
+                    return StatusCode::NOT_MODIFIED.into_response();
+                }
+                ([(header::ETAG, "\"v1\"")], EXAMPLE).into_response()
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        SuiteLink {
+            url: url.parse().unwrap(),
+            token: "t".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn unchanged_settings_come_back_as_304() {
+        let link = etag_suite().await;
+        let http = crate::http::client();
+        match fetch(&http, &link, None, None).await.unwrap() {
+            Fetched::Changed(s, etag) => {
+                assert_eq!(s.warn_threshold, Severity::Moderate);
+                assert_eq!(etag.as_deref(), Some("\"v1\""));
+            }
+            Fetched::Unchanged => panic!("ohne ETag kommt alles"),
+        }
+        assert!(matches!(
+            fetch(&http, &link, None, Some("\"v1\"")).await.unwrap(),
+            Fetched::Unchanged
+        ));
+        assert!(matches!(
+            fetch(&http, &link, None, Some("\"alt\"")).await.unwrap(),
+            Fetched::Changed(..)
+        ));
     }
 }

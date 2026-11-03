@@ -20,7 +20,7 @@ pub enum SourceError {
     Parse(String),
 }
 
-const TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) async fn get_bytes(http: &reqwest::Client, url: Url) -> Result<Vec<u8>, SourceError> {
     get_bytes_as(http, url, None).await

@@ -496,8 +496,10 @@ mod tests {
             .route(
                 "/api/konfiguration",
                 get(move |h: HeaderMap| async move {
-                    if auth(&h, "suite") {
-                        (StatusCode::OK, config).into_response()
+                    if auth(&h, "suite") && h.get("if-none-match").is_some_and(|v| v == "\"v1\"") {
+                        StatusCode::NOT_MODIFIED.into_response()
+                    } else if auth(&h, "suite") {
+                        (StatusCode::OK, [("etag", "\"v1\"")], config).into_response()
                     } else {
                         StatusCode::UNAUTHORIZED.into_response()
                     }
@@ -531,6 +533,15 @@ mod tests {
         let base = fake_suite_and_suchlage().await;
         let state = suite_state(base, "suite").await;
         crate::poller::poll_config(&state).await;
+        // Die zweite Abholung bekommt 304 und lässt die Einstellungen stehen.
+        crate::poller::poll_config(&state).await;
+        assert!(
+            !state
+                .errors
+                .read()
+                .await
+                .contains_key(crate::poller::CONFIG_KEY)
+        );
         crate::poller::poll_suchlage(&state).await;
         let res = router(state)
             .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
