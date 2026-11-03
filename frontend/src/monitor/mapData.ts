@@ -99,14 +99,49 @@ export interface VehicleMark {
   stand: string | null;
 }
 
-/** Fahrzeuge für die Karte: das eigene am GPS-Fix dieses Monitors (`here`), die übrigen an ihrer letzten Meldung. */
+/**
+ * Fahrzeuge und feste Orte für die Karte: das eigene Fahrzeug am GPS-Fix dieses Monitors (`here`), die übrigen an
+ * ihrer letzten Meldung, feste Orte an ihrem Ort und nie veraltet.
+ */
 export function vehicleMarks(vehicles: Vehicle[], nowMs: number, here: { lat: number; lon: number }): VehicleMark[] {
-  return vehicles.map((v) => ({
-    id: v.id,
-    callSign: v.callSign,
-    src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(v.symbol)}`,
-    lat: v.own ? here.lat : v.lat,
-    lon: v.own ? here.lon : v.lon,
-    stand: !v.own && nowMs - v.atMs > VEHICLE_STALE_MS ? `Stand ${clock(v.atMs)}` : null,
-  }));
+  return vehicles.map((v) => {
+    const live = v.own && !v.fixed;
+    return {
+      id: v.id,
+      callSign: v.callSign,
+      src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(v.symbol)}`,
+      lat: live ? here.lat : v.lat,
+      lon: live ? here.lon : v.lon,
+      stand: !live && !v.fixed && nowMs - v.atMs > VEHICLE_STALE_MS ? `Stand ${clock(v.atMs)}` : null,
+    };
+  });
+}
+
+/** Bis zu dieser Entfernung zoomt die Karte ohne Einsatz heraus, um Fahrzeuge und feste Orte mit zu zeigen. */
+export const SURROUNDING_KM = 50;
+
+/**
+ * Rahmen um den eigenen Standort (`here`), in dem alle übrigen Zeichen bis `SURROUNDING_KM` liegen, mit `here` genau in
+ * der Mitte: Die Karte bleibt auf dem eigenen Zeichen und zoomt nur so weit heraus wie nötig. Veraltete Positionen
+ * zählen nicht, weiter entfernte auch nicht (sonst zöge ein Fahrzeug in der Werkstatt die Karte auf Landesgröße).
+ * `null`, wenn nichts im Umkreis liegt; dann gilt die eingestellte Zoomstufe. Auf rund 1 km gerundet, damit das
+ * GPS-Zittern die Karte nicht bewegt.
+ */
+export function surroundingBounds(marks: VehicleMark[], here: { lat: number; lon: number }, km = SURROUNDING_KM): [[number, number], [number, number]] | null {
+  const kmPerLon = 111.32 * Math.cos((here.lat * Math.PI) / 180);
+  let dLat = 0;
+  let dLon = 0;
+  for (const m of marks) {
+    if (m.stand !== null) continue;
+    const y = (m.lat - here.lat) * 110.57;
+    const x = (m.lon - here.lon) * kmPerLon;
+    if (Math.hypot(x, y) > km) continue;
+    dLat = Math.max(dLat, Math.abs(m.lat - here.lat));
+    dLon = Math.max(dLon, Math.abs(m.lon - here.lon));
+  }
+  if (dLat < 0.01 && dLon < 0.01) return null;
+  const r = (v: number) => Math.round(v * 100) / 100;
+  const up = (v: number) => Math.ceil(v * 100 - 1e-6) / 100;
+  const [la, lo, a, b] = [r(here.lat), r(here.lon), up(dLat), up(dLon)];
+  return [[r(lo - b), r(la - a)], [r(lo + b), r(la + a)]];
 }

@@ -57,6 +57,8 @@ struct RawVehicle {
     at: String,
     #[serde(default)]
     own: bool,
+    #[serde(default)]
+    fixed: bool,
 }
 
 /// Ein Zeichen aus kommplan hat gut 1 KB; viel mehr ist kein Zeichen, sondern ein Fehler.
@@ -80,6 +82,7 @@ fn vehicle(v: RawVehicle) -> Option<Vehicle> {
         lon: v.lon,
         at_ms,
         own: v.own,
+        fixed: v.fixed,
     })
 }
 
@@ -378,6 +381,9 @@ pub(crate) mod tests {
         assert_eq!(s.vehicles[0].id, "gut");
         assert_eq!(s.vehicles[0].at_ms, 1_793_628_000_000);
         assert!(s.vehicles[0].own);
+        assert!(!s.vehicles[0].fixed, "ohne Feld kein fester Ort");
+        let fixed = body.replace(r#""own": true"#, r#""own": true, "fixed": true"#);
+        assert!(parse(fixed.as_bytes()).unwrap().vehicles[0].fixed);
     }
 
     #[test]
