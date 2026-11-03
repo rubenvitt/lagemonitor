@@ -121,7 +121,7 @@ mod tests {
         ))
         .unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let list = fetch(&reqwest::Client::new(), &base, &uelzen())
+        let list = fetch(&crate::http::client(), &base, &uelzen())
             .await
             .unwrap();
         assert_eq!(list.len(), 2);

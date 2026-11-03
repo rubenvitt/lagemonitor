@@ -193,7 +193,7 @@ mod tests {
         };
 
         let w = fetch(
-            &reqwest::Client::new(),
+            &crate::http::client(),
             &base,
             &loc,
             at("2026-10-27T11:30:00Z"),
@@ -216,7 +216,7 @@ mod tests {
             label: "x".into(),
         };
         let err = fetch(
-            &reqwest::Client::new(),
+            &crate::http::client(),
             &base,
             &loc,
             at("2026-10-27T11:30:00Z"),

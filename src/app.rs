@@ -11,6 +11,8 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use tokio::sync::RwLock;
 use tower_http::catch_panic::CatchPanicLayer;
+use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};
 use tower_http::trace::TraceLayer;
 
 use crate::config::BootConfig;
@@ -49,6 +51,12 @@ pub struct SuchlageSnapshot {
     pub url: String,
     pub fetched_at_ms: i64,
     pub view: crate::contract::SuchlageView,
+    /// Gebiete und Flugspuren mit Fassung, gefiltert nach `areas`/`tracks` zum Zeitpunkt des Abrufs.
+    pub map: Option<crate::sources::suchlage::KnownMap>,
+    /// Zuletzt nach der Karte gefragt (`poller::SUCHLAGE_MAP_EVERY_MS`).
+    pub map_checked_ms: i64,
+    /// `(areas, tracks)` der Verbindung beim Abruf: ändert sich das, gilt `map` nicht mehr.
+    pub map_filter: (bool, bool),
 }
 
 impl AppState {
@@ -72,7 +80,7 @@ impl AppState {
             errors: Arc::default(),
             tiles,
             suchlage: Arc::default(),
-            http: reqwest::Client::new(),
+            http: crate::http::client(),
             discovery: Arc::default(),
             link_refresh_ms: Arc::default(),
             traffic_attempts: Arc::default(),
@@ -116,9 +124,23 @@ pub fn router(state: AppState) -> Router {
         )
         .fallback(fallback)
         .layer(axum::middleware::map_response(static_files::stand_header))
+        .layer(compression())
         .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// gzip für Oberfläche und `/api/monitor`, wenn der Browser es kann: Die Online-Instanz lädt so ein
+/// Viertel, `/api/monitor` (mit Flugspuren und Warngebieten) ein Fünftel. Nur gzip, kein Brotli:
+/// Brotli brächte gut 10 % mehr, aber rund 0,5 MB mehr Programm, das jedes Update mitlädt.
+/// Kacheln sind schon gzip (`web::tiles`, der Layer lässt sie dann in Ruhe), Video wird nicht
+/// angefasst.
+fn compression() -> CompressionLayer<impl Predicate> {
+    CompressionLayer::new().gzip(true).compress_when(
+        DefaultPredicate::new()
+            .and(NotForContentType::const_new("video/"))
+            .and(NotForContentType::const_new("application/octet-stream")),
+    )
 }
 
 /// Derselbe Monitor, aber nur nach Anmeldung über Pocket ID (`LAGEMONITOR_AUTH_BIND`).
@@ -309,7 +331,7 @@ mod tests {
         let state = test_state(None).await;
         let dwd = crate::sources::nina::tests::dwd_id();
         let base = crate::sources::nina::tests::serve(move |f| f.starts_with(&dwd)).await;
-        crate::poller::poll_nina(&state, &reqwest::Client::new(), &base).await;
+        crate::poller::poll_nina(&state, &crate::http::client(), &base).await;
         let res = router(state)
             .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
             .await
@@ -380,6 +402,23 @@ mod tests {
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
         let res = get_path("/api/tiles/1/0/4294967295").await;
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn monitor_goes_out_gzipped_when_asked() {
+        let app = router(test_state(None).await);
+        let req = |enc: Option<&str>| {
+            let mut r = Request::get("/api/monitor");
+            if let Some(e) = enc {
+                r = r.header(header::ACCEPT_ENCODING, e);
+            }
+            r.body(Body::empty()).unwrap()
+        };
+        let res = app.clone().oneshot(req(Some("gzip, br"))).await.unwrap();
+        assert_eq!(res.headers()[header::CONTENT_ENCODING], "gzip");
+        let res = app.oneshot(req(None)).await.unwrap();
+        assert!(res.headers().get(header::CONTENT_ENCODING).is_none());
+        assert!(json_of(res).await.get("map").is_some());
     }
 
     #[tokio::test]
@@ -457,8 +496,10 @@ mod tests {
             .route(
                 "/api/konfiguration",
                 get(move |h: HeaderMap| async move {
-                    if auth(&h, "suite") {
-                        (StatusCode::OK, config).into_response()
+                    if auth(&h, "suite") && h.get("if-none-match").is_some_and(|v| v == "\"v1\"") {
+                        StatusCode::NOT_MODIFIED.into_response()
+                    } else if auth(&h, "suite") {
+                        (StatusCode::OK, [("etag", "\"v1\"")], config).into_response()
                     } else {
                         StatusCode::UNAUTHORIZED.into_response()
                     }
@@ -492,6 +533,15 @@ mod tests {
         let base = fake_suite_and_suchlage().await;
         let state = suite_state(base, "suite").await;
         crate::poller::poll_config(&state).await;
+        // Die zweite Abholung bekommt 304 und lässt die Einstellungen stehen.
+        crate::poller::poll_config(&state).await;
+        assert!(
+            !state
+                .errors
+                .read()
+                .await
+                .contains_key(crate::poller::CONFIG_KEY)
+        );
         crate::poller::poll_suchlage(&state).await;
         let res = router(state)
             .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
@@ -513,6 +563,101 @@ mod tests {
             !json.to_string().contains("geheim"),
             "Der Token bleibt auf dem Server"
         );
+    }
+
+    #[tokio::test]
+    async fn another_suite_does_not_get_the_old_etag() {
+        use axum::http::HeaderMap;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let conditional = Arc::new(AtomicUsize::new(0));
+        let seen = conditional.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base: reqwest::Url = format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let app = Router::new().route(
+            "/api/konfiguration",
+            get(move |h: HeaderMap| {
+                let seen = seen.clone();
+                async move {
+                    if h.get("if-none-match").is_some_and(|v| v == "\"v1\"") {
+                        seen.fetch_add(1, Ordering::SeqCst);
+                        StatusCode::NOT_MODIFIED.into_response()
+                    } else {
+                        let body = crate::sources::suite::tests::EXAMPLE;
+                        (StatusCode::OK, [("etag", "\"v1\"")], body).into_response()
+                    }
+                }
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let first = suite_state(base.clone(), "a").await;
+        crate::poller::poll_config(&first).await;
+        crate::poller::poll_config(&first).await;
+        assert_eq!(conditional.load(Ordering::SeqCst), 1);
+        let mut boot = BootConfig::from_lookup(|_| None).unwrap();
+        boot.suite = Some(crate::config::SuiteLink {
+            url: base,
+            token: "b".into(),
+        });
+        let second = AppState::new(first.pool.clone(), Arc::new(boot)).await;
+        crate::poller::poll_config(&second).await;
+        assert_eq!(conditional.load(Ordering::SeqCst), 1);
+        crate::poller::poll_config(&second).await;
+        assert_eq!(conditional.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn without_a_mission_suchlage_is_asked_only_every_30_s() {
+        let base = fake_suite_and_suchlage().await;
+        let state = suite_state(base.clone(), "suite").await;
+        crate::poller::poll_config(&state).await;
+        let idle = |fetched_at_ms| {
+            SuchlageSnapshot {
+            url: base.as_str().trim_end_matches('/').to_string(),
+            fetched_at_ms,
+            view: crate::sources::suchlage::parse(
+                br#"{"api_version":1,"mission":null,"map":{"features":[]},"aircraft":[],"videos":[]}"#,
+                &crate::sources::suchlage::tests::link(),
+            )
+            .unwrap(),
+            map: None,
+            map_checked_ms: 0,
+            map_filter: (true, true),
+        }
+        };
+        let url = crate::settings::load(&state.pool)
+            .await
+            .unwrap()
+            .suchlage
+            .unwrap()
+            .url;
+        let now = crate::poller::now_ms();
+        *state.suchlage.write().await = Some(SuchlageSnapshot {
+            url: url.clone(),
+            ..idle(now)
+        });
+        crate::poller::poll_suchlage(&state).await;
+        let mission = |s: &AppState| {
+            let s = s.clone();
+            async move {
+                s.suchlage
+                    .read()
+                    .await
+                    .as_ref()
+                    .unwrap()
+                    .view
+                    .mission
+                    .clone()
+            }
+        };
+        assert!(mission(&state).await.is_none(), "gerade erst gefragt");
+        *state.suchlage.write().await = Some(SuchlageSnapshot {
+            url,
+            ..idle(now - crate::poller::SUCHLAGE_IDLE_EVERY_MS)
+        });
+        crate::poller::poll_suchlage(&state).await;
+        assert!(mission(&state).await.is_some());
     }
 
     #[tokio::test]

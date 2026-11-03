@@ -85,8 +85,11 @@ jobs:
           file: deploy/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          # PRs bauen nur zur Probe; geschoben wird allein von main.
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          # PRs bauen nur zur Probe; geschoben wird allein von main. Layer mit zstd statt gzip,
+          # auch die der Basis (force-compression): Ein Update über den Uplink des FüKw wird so
+          # rund ein Fünftel kleiner. Pullen kann das Docker ab 23; FüKw und iuk-services haben
+          # 29.9 (geprüft 3.11.2026).
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }},oci-mediatypes=true,compression=zstd,compression-level=19,force-compression=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
       - name: Digest merken

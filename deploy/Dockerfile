@@ -10,14 +10,24 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm build
 
-# Stufe 2: Server
+# Stufe 2: Server, statisch gegen musl gelinkt: Die Laufzeit braucht dann keine libc, und die Basis
+# schrumpft von 10,7 MB (distroless/cc) auf 0,9 MB (distroless/static). Gebaut wird nativ je
+# Architektur (ci.yml), daher das Ziel aus `uname -m`.
 FROM rust:1.99.0-bookworm AS server
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends musl-tools \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs rust-toolchain.toml ./
 COPY migrations migrations
 COPY src src
 COPY --from=web /src/frontend/dist frontend/dist
-RUN cargo build --release --bin lagemonitor
+# cc-rs (ring) sucht sonst `<arch>-linux-musl-gcc`, musl-tools bringt nur `musl-gcc`.
+RUN target="$(uname -m)-unknown-linux-musl" \
+ && export "CC_$(uname -m)_unknown_linux_musl=musl-gcc" \
+ && rustup target add "$target" \
+ && cargo build --release --bin lagemonitor --target "$target" \
+ && cp "target/$target/release/lagemonitor" /lagemonitor
 
 # /data mit den Rechten des nonroot-Nutzers (distroless kann weder mkdir noch chown); Docker
 # übernimmt sie beim ersten Mount eines frischen Volumes. Bei einem Bind-Mount gelten die
@@ -26,9 +36,10 @@ FROM busybox:1.37.0-uclibc AS datadir
 RUN mkdir -p /data
 
 # Stufe 3: Laufzeit
-FROM gcr.io/distroless/cc-debian13:nonroot
+# static statt cc: CA-Zertifikate, Zeitzonen und den nonroot-Nutzer hat sie trotzdem.
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=datadir --chown=nonroot:nonroot /data /data
-COPY --from=server /src/target/release/lagemonitor /usr/local/bin/lagemonitor
+COPY --from=server /lagemonitor /usr/local/bin/lagemonitor
 ENV LAGEMONITOR_DATA_DIR=/data
 VOLUME ["/data"]
 EXPOSE 8080

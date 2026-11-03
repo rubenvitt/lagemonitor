@@ -27,6 +27,12 @@ const GPS_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const GPS_SAVE_EVERY_MS: i64 = 10_000;
 pub const CONFIG_INTERVAL: Duration = Duration::from_secs(60);
 pub const SUCHLAGE_INTERVAL: Duration = Duration::from_secs(5);
+/// Ohne laufenden Einsatz reicht alle 30 s: Ein neuer Einsatz erscheint so spätestens nach einer
+/// halben Minute, und die Abfragen im Leerlauf (den größten Teil des Tages) sinken auf ein Sechstel.
+pub const SUCHLAGE_IDLE_EVERY_MS: i64 = 30_000;
+/// Gebiete und Flugspuren höchstens alle 30 s und nur bei einer Änderung; die Drohnen kommen
+/// weiter alle 5 s. Die Spur hinter einer fliegenden Drohne hängt so bis zu 30 s nach.
+pub const SUCHLAGE_MAP_EVERY_MS: i64 = 30_000;
 /// Takt, in dem nachgesehen wird, ob ein Verkehrs-Stand fällig ist; abgefragt wird viel seltener.
 pub const TRAFFIC_TICK: Duration = Duration::from_secs(60);
 /// Störungen stündlich: 2 Instanzen × 24 × 31 = 1.488 von 2.500 Abfragen im Monat (`sources::tomtom`).
@@ -38,6 +44,8 @@ pub const TRAFFIC_RETRY_MS: i64 = 15 * 60_000;
 
 /// Stand-Schlüssel der Konfiguration aus der Suite (nur Zeitpunkt, die Werte stehen in `settings`).
 pub const CONFIG_KEY: &str = "suite-config";
+/// `ETag` der zuletzt gespeicherten Konfiguration (`suite::fetch`).
+pub const CONFIG_ETAG_KEY: &str = "suite-config-etag";
 pub const SUCHLAGE_KEY: &str = "suchlage";
 /// Letzter GPS-Fix (`Position`).
 pub const GPS_KEY: &str = "gps";
@@ -169,7 +177,7 @@ async fn load_settings(state: &AppState) -> Option<settings::Settings> {
         .ok()
 }
 
-fn now_ms() -> i64 {
+pub fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
 
@@ -308,26 +316,67 @@ async fn own_position(state: &AppState) -> Option<String> {
 
 const OWN_POSITION_MAX_AGE_S: i64 = 24 * 60 * 60;
 
+/// ETag der Suite-Konfiguration samt der Suite, von der er stammt.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ConfigEtag {
+    scope: String,
+    etag: String,
+}
+
+/// Kennung der Suite aus Adresse und Schlüssel; der Schlüssel landet nur gehasht in der Datenbank.
+pub fn config_etag_scope(link: &crate::config::SuiteLink) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(format!("{}\n{}", link.url, link.token).as_bytes());
+    hex::encode(&digest[..8])
+}
+
 pub async fn poll_config(state: &AppState) {
     let Some(link) = state.boot.suite.clone() else {
         return;
     };
     let position = own_position(state).await;
+    // Ohne gespeicherten Stand (frische Datenbank) zählt ein alter ETag nicht, und für eine andere
+    // Suite (Adresse oder Schlüssel geändert) auch nicht.
+    let scope = config_etag_scope(&link);
+    let etag = match store::fetched_at(&state.pool, CONFIG_KEY).await {
+        Some(_) => store::load::<ConfigEtag>(&state.pool, CONFIG_ETAG_KEY)
+            .await
+            .map(|(_, e)| e)
+            .filter(|e| e.scope == scope && !e.etag.is_empty())
+            .map(|e| e.etag),
+        None => None,
+    };
     let http = state.http.clone();
-    let fetched = tokio::spawn(async move { suite::fetch(&http, &link, position).await }).await;
+    let fetched =
+        tokio::spawn(async move { suite::fetch(&http, &link, position, etag.as_deref()).await })
+            .await;
+    let saved = |r: Result<(), crate::error::AppError>| {
+        r.map_err(|e| {
+            tracing::warn!(error = ?e, "Stand der Konfiguration nicht gespeichert");
+            "Speichern fehlgeschlagen".to_string()
+        })
+    };
     let outcome = match fetched {
-        Ok(Ok(cfg)) => match settings::save(&state.pool, &cfg).await {
-            Ok(()) => store::save(&state.pool, CONFIG_KEY, now_ms(), &())
-                .await
-                .map_err(|e| {
-                    tracing::warn!(error = ?e, "Stand der Konfiguration nicht gespeichert");
-                    "Speichern fehlgeschlagen".to_string()
-                }),
-            Err(e) => {
-                tracing::warn!(error = ?e, "Konfiguration nicht gespeichert");
-                Err("Speichern fehlgeschlagen".to_string())
+        Ok(Ok(suite::Fetched::Changed(cfg, new_etag))) => {
+            match settings::save(&state.pool, &cfg).await {
+                Ok(()) => {
+                    let etag = ConfigEtag {
+                        scope,
+                        etag: new_etag.unwrap_or_default(),
+                    };
+                    saved(store::save(&state.pool, CONFIG_ETAG_KEY, now_ms(), &etag).await).and(
+                        saved(store::save(&state.pool, CONFIG_KEY, now_ms(), &()).await),
+                    )
+                }
+                Err(e) => {
+                    tracing::warn!(error = ?e, "Konfiguration nicht gespeichert");
+                    Err("Speichern fehlgeschlagen".to_string())
+                }
             }
-        },
+        }
+        Ok(Ok(suite::Fetched::Unchanged)) => {
+            saved(store::save(&state.pool, CONFIG_KEY, now_ms(), &()).await)
+        }
         Ok(Err(e)) => {
             tracing::warn!(error = %e, "Konfiguration nicht abgeholt");
             Err(e.to_string())
@@ -358,13 +407,40 @@ pub async fn poll_suchlage(state: &AppState) {
             return;
         }
     };
+    let now = now_ms();
+    let filter = (link.areas, link.tracks);
+    let previous = state
+        .suchlage
+        .read()
+        .await
+        .clone()
+        .filter(|p| p.url == link.url);
+    let (wish, known) = match &previous {
+        Some(p) => {
+            if p.view.mission.is_none() && now - p.fetched_at_ms < SUCHLAGE_IDLE_EVERY_MS {
+                return;
+            }
+            suchlage_map_wish(p, filter, now)
+        }
+        None => (suchlage::MapWish::Full, None),
+    };
     let (http, l) = (state.http.clone(), link.clone());
-    let outcome = match tokio::spawn(async move { suchlage::fetch(&http, &l).await }).await {
-        Ok(Ok(view)) => {
+    let fetch = async move { suchlage::fetch(&http, &l, &wish, known.as_ref()).await };
+    let outcome = match tokio::spawn(fetch).await {
+        Ok(Ok(fetched)) => {
+            let map_checked_ms = map_checked_after(
+                previous.as_ref(),
+                fetched.view.mission.as_ref(),
+                fetched.map_checked,
+                now,
+            );
             *state.suchlage.write().await = Some(SuchlageSnapshot {
                 url: link.url,
-                fetched_at_ms: now_ms(),
-                view,
+                fetched_at_ms: now,
+                view: fetched.view,
+                map: fetched.map,
+                map_checked_ms,
+                map_filter: filter,
             });
             Ok(())
         }
@@ -382,6 +458,42 @@ pub async fn poll_suchlage(state: &AppState) {
         Ok(()) => errors.remove(SUCHLAGE_KEY),
         Err(m) => errors.insert(SUCHLAGE_KEY.to_string(), m),
     };
+}
+
+/// Was die nächste Suchlage-Abfrage an Karte will. Ohne bekannte Fassung oder nach geänderten
+/// Schaltern die ganze, sonst alle `SUCHLAGE_MAP_EVERY_MS` nur bei Änderung, dazwischen keine.
+/// Wann die Karte zuletzt geprüft war. Wechselt der Einsatz, ohne dass die Karte mitkam, gilt sie
+/// als ungeprüft: Die nächste Abfrage fragt nach ihr, statt die alte Karte 30 s stehen zu lassen.
+/// Eine bloß neuere Fassung im selben Einsatz (wachsende Flugspur) wartet dagegen den Takt ab.
+pub fn map_checked_after(
+    previous: Option<&SuchlageSnapshot>,
+    mission: Option<&crate::contract::SuchlageMission>,
+    map_checked: bool,
+    now_ms: i64,
+) -> i64 {
+    match previous {
+        _ if map_checked => now_ms,
+        Some(p) if p.view.mission.as_ref() == mission => p.map_checked_ms,
+        _ => now_ms - SUCHLAGE_MAP_EVERY_MS,
+    }
+}
+
+pub fn suchlage_map_wish(
+    previous: &SuchlageSnapshot,
+    filter: (bool, bool),
+    now_ms: i64,
+) -> (suchlage::MapWish, Option<suchlage::KnownMap>) {
+    match &previous.map {
+        Some(map) if previous.map_filter == filter => {
+            let wish = if now_ms - previous.map_checked_ms < SUCHLAGE_MAP_EVERY_MS {
+                suchlage::MapWish::None
+            } else {
+                suchlage::MapWish::IfChanged(map.etag.clone())
+            };
+            (wish, Some(map.clone()))
+        }
+        _ => (suchlage::MapWish::Full, None),
+    }
 }
 
 pub fn spawn(state: AppState) {
@@ -407,7 +519,7 @@ pub fn spawn(state: AppState) {
         }
     });
 
-    let http = reqwest::Client::new();
+    let http = crate::http::client();
     let nina_base: Url = NINA_BASE.parse().expect("gültige Konstante");
     let weather_base: Url = BRIGHT_SKY_BASE.parse().expect("gültige Konstante");
 
@@ -443,6 +555,66 @@ pub fn spawn(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_map_is_asked_for_rarely_and_only_if_changed() {
+        let known = suchlage::KnownMap {
+            etag: "e1".into(),
+            areas: serde_json::json!({}),
+            tracks: serde_json::json!({}),
+        };
+        let snap = |map: Option<suchlage::KnownMap>, checked| SuchlageSnapshot {
+            url: "u".into(),
+            fetched_at_ms: 0,
+            view: suchlage::parse(
+                suchlage::tests::RUNNING.as_bytes(),
+                &suchlage::tests::link(),
+            )
+            .unwrap(),
+            map,
+            map_checked_ms: checked,
+            map_filter: (true, true),
+        };
+        let wish = |s: &SuchlageSnapshot, filter, now| suchlage_map_wish(s, filter, now).0;
+        assert_eq!(
+            wish(&snap(None, 0), (true, true), 1),
+            suchlage::MapWish::Full
+        );
+        let s = snap(Some(known), 1_000);
+        assert_eq!(wish(&s, (true, true), 2_000), suchlage::MapWish::None);
+        assert_eq!(
+            wish(&s, (true, true), 1_000 + SUCHLAGE_MAP_EVERY_MS),
+            suchlage::MapWish::IfChanged("e1".into())
+        );
+        assert_eq!(
+            wish(&s, (true, false), 2_000),
+            suchlage::MapWish::Full,
+            "Schalter geändert"
+        );
+        let mission = s.view.mission.clone();
+        assert_eq!(
+            map_checked_after(Some(&s), mission.as_ref(), false, 2_000),
+            1_000
+        );
+        assert_eq!(
+            map_checked_after(Some(&s), mission.as_ref(), true, 2_000),
+            2_000
+        );
+        let other = mission.map(|m| crate::contract::SuchlageMission {
+            name: "Neuer Einsatz".into(),
+            ..m
+        });
+        let checked = map_checked_after(Some(&s), other.as_ref(), false, 2_000);
+        let s = SuchlageSnapshot {
+            map_checked_ms: checked,
+            ..s
+        };
+        assert_eq!(
+            wish(&s, (true, true), 2_000 + 5_000),
+            suchlage::MapWish::IfChanged("e1".into()),
+            "neuer Einsatz: Karte gleich nachfragen"
+        );
+    }
 
     #[test]
     fn keys_carry_parameters() {

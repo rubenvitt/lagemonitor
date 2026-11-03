@@ -237,7 +237,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let http = reqwest::Client::new();
+        let http = crate::http::client();
 
         let list = fetch_incidents(&http, &base, "gut", &uelzen())
             .await
