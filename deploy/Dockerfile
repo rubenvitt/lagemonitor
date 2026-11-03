@@ -22,7 +22,9 @@ COPY Cargo.toml Cargo.lock build.rs rust-toolchain.toml ./
 COPY migrations migrations
 COPY src src
 COPY --from=web /src/frontend/dist frontend/dist
+# cc-rs (ring) sucht sonst `<arch>-linux-musl-gcc`, musl-tools bringt nur `musl-gcc`.
 RUN target="$(uname -m)-unknown-linux-musl" \
+ && export "CC_$(uname -m)_unknown_linux_musl=musl-gcc" \
  && rustup target add "$target" \
  && cargo build --release --bin lagemonitor --target "$target" \
  && cp "target/$target/release/lagemonitor" /lagemonitor

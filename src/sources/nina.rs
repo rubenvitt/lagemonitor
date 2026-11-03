@@ -171,13 +171,32 @@ async fn fetch_one(
     base: &Url,
     id: &str,
     provider: Option<Provider>,
-) -> Result<Warning, SourceError> {
+) -> Result<(Warning, bool), SourceError> {
     let cap = get_bytes(http, endpoint(base, &format!("warnings/{id}.json"))?).await?;
-    let geojson = match endpoint(base, &format!("warnings/{id}.geojson")) {
-        Ok(url) => get_bytes(http, url).await.ok(),
-        Err(_) => None,
+    let (geojson, complete) = geojson(http, base, id).await;
+    let warning = parse_warning(id, provider, &cap, geojson.as_deref())?;
+    Ok((warning, complete))
+}
+
+/// GeoJSON einer Warnung. `false`: Abruf gescheitert (nicht 404), das Gebiet fehlt nur vorerst.
+async fn geojson(http: &reqwest::Client, base: &Url, id: &str) -> (Option<Vec<u8>>, bool) {
+    let Ok(url) = endpoint(base, &format!("warnings/{id}.geojson")) else {
+        return (None, true);
     };
-    parse_warning(id, provider, &cap, geojson.as_deref())
+    let res = match http.get(url).timeout(super::TIMEOUT).send().await {
+        Ok(res) => res,
+        Err(_) => return (None, false),
+    };
+    if res.status() == reqwest::StatusCode::NOT_FOUND {
+        return (None, true);
+    }
+    if !res.status().is_success() {
+        return (None, false);
+    }
+    match res.bytes().await {
+        Ok(bytes) => (Some(bytes.to_vec()), true),
+        Err(_) => (None, false),
+    }
 }
 
 /// `previous`: letzter gespeicherter Stand. Nennt das Dashboard für eine Warnung dieselbe Fassung wie
@@ -207,7 +226,12 @@ pub async fn fetch(
             continue;
         }
         match fetch_one(http, base, &id, provider).await {
-            Ok(w) => warnings.push(Warning { revision, ..w }),
+            // Ohne vollständiges GeoJSON keine Fassung merken, sonst fehlte das Gebiet bis zur
+            // nächsten Fassung.
+            Ok((w, complete)) => warnings.push(Warning {
+                revision: revision.filter(|_| complete),
+                ..w
+            }),
             Err(e) => {
                 let old = previous.iter().find(|w| w.id == id).ok_or(e)?;
                 tracing::warn!(%id, "NINA-Warnung nicht abrufbar, letzter Stand bleibt");
@@ -396,11 +420,18 @@ pub(crate) mod tests {
                 ..parse_warning(&l.id, l.provider, CAP_DWD, None).unwrap()
             })
             .collect();
-        let base = serve(|_| true).await;
+        let caps = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = caps.clone();
+        let base = serve(move |_| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            true
+        })
+        .await;
         let warnings = fetch(&crate::http::client(), &base, "1", &previous)
             .await
             .unwrap();
         assert_eq!(warnings, previous);
+        assert_eq!(caps.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -415,6 +446,33 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(warnings[0].headline, "Amtliche WARNUNG vor STURMBÖEN");
         assert_eq!(warnings[0].revision, listed[0].revision);
+    }
+
+    #[tokio::test]
+    async fn failed_geojson_keeps_the_revision_open() {
+        let app = Router::new()
+            .route("/dashboard/{file}", get(|| async { FULL }))
+            .route(
+                "/warnings/{file}",
+                get(
+                    |axum::extract::Path(file): axum::extract::Path<String>| async move {
+                        if file.ends_with(".geojson") {
+                            (StatusCode::BAD_GATEWAY, Vec::new())
+                        } else if file.starts_with("dwd") {
+                            (StatusCode::OK, CAP_DWD.to_vec())
+                        } else {
+                            (StatusCode::OK, CAP_MOWAS.to_vec())
+                        }
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let warnings = fetch(&crate::http::client(), &base, "1", &[])
+            .await
+            .unwrap();
+        assert!(warnings.iter().all(|w| w.revision.is_none()));
     }
 
     #[tokio::test]
