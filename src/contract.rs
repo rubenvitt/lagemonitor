@@ -97,6 +97,10 @@ pub struct Warning {
     /// GeoJSON-FeatureCollection; `null`, wenn NINA keine Geometrie liefert.
     #[ts(type = "unknown")]
     pub geometry: Option<serde_json::Value>,
+    /// Fassung laut NINA-Dashboard (`sources::nina::Listed`); nur für den Abruf, nicht für die Oberfläche.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(skip)]
+    pub revision: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

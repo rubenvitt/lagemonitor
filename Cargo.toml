@@ -17,7 +17,9 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-reqwest = { version = "0.13", default-features = false, features = ["gzip", "json", "form", "rustls", "stream"] }
+# TLS mit ring statt aws-lc: rund 1,5 MB kleineres Programm. Den Anbieter setzt `http::client`.
+reqwest = { version = "0.13", default-features = false, features = ["gzip", "json", "form", "rustls-no-provider", "stream"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 # Anmeldung (Pocket ID): Zufall für Sitzung, State und PKCE.
 getrandom = "0.4"
 sha2 = "0.10"
@@ -26,12 +28,20 @@ hex = "0.4"
 rust-embed = "8"
 mime_guess = "2"
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.7", features = ["trace", "catch-panic"] }
+tower-http = { version = "0.7", features = ["trace", "catch-panic", "compression-gzip"] }
 ts-rs = "12"
 
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
+
+# Klein statt schnell: Jedes Update lädt das Programm ganz neu über den Uplink des FüKw. Gemessen
+# (3.11.2026): 6,9 → 4,1 MB komprimiert. `panic` bleibt `unwind`, sonst greift `CatchPanicLayer` nicht.
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
 
 [profile.dev]
 debug = "line-tables-only"

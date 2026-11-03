@@ -11,6 +11,8 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use tokio::sync::RwLock;
 use tower_http::catch_panic::CatchPanicLayer;
+use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};
 use tower_http::trace::TraceLayer;
 
 use crate::config::BootConfig;
@@ -72,7 +74,7 @@ impl AppState {
             errors: Arc::default(),
             tiles,
             suchlage: Arc::default(),
-            http: reqwest::Client::new(),
+            http: crate::http::client(),
             discovery: Arc::default(),
             link_refresh_ms: Arc::default(),
             traffic_attempts: Arc::default(),
@@ -116,9 +118,23 @@ pub fn router(state: AppState) -> Router {
         )
         .fallback(fallback)
         .layer(axum::middleware::map_response(static_files::stand_header))
+        .layer(compression())
         .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// gzip für Oberfläche und `/api/monitor`, wenn der Browser es kann: Die Online-Instanz lädt so ein
+/// Viertel, `/api/monitor` (mit Flugspuren und Warngebieten) ein Fünftel. Nur gzip, kein Brotli:
+/// Brotli brächte gut 10 % mehr, aber rund 0,5 MB mehr Programm, das jedes Update mitlädt.
+/// Kacheln sind schon gzip (`web::tiles`, der Layer lässt sie dann in Ruhe), Video wird nicht
+/// angefasst.
+fn compression() -> CompressionLayer<impl Predicate> {
+    CompressionLayer::new().gzip(true).compress_when(
+        DefaultPredicate::new()
+            .and(NotForContentType::const_new("video/"))
+            .and(NotForContentType::const_new("application/octet-stream")),
+    )
 }
 
 /// Derselbe Monitor, aber nur nach Anmeldung über Pocket ID (`LAGEMONITOR_AUTH_BIND`).
@@ -309,7 +325,7 @@ mod tests {
         let state = test_state(None).await;
         let dwd = crate::sources::nina::tests::dwd_id();
         let base = crate::sources::nina::tests::serve(move |f| f.starts_with(&dwd)).await;
-        crate::poller::poll_nina(&state, &reqwest::Client::new(), &base).await;
+        crate::poller::poll_nina(&state, &crate::http::client(), &base).await;
         let res = router(state)
             .oneshot(Request::get("/api/monitor").body(Body::empty()).unwrap())
             .await
@@ -380,6 +396,23 @@ mod tests {
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
         let res = get_path("/api/tiles/1/0/4294967295").await;
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn monitor_goes_out_gzipped_when_asked() {
+        let app = router(test_state(None).await);
+        let req = |enc: Option<&str>| {
+            let mut r = Request::get("/api/monitor");
+            if let Some(e) = enc {
+                r = r.header(header::ACCEPT_ENCODING, e);
+            }
+            r.body(Body::empty()).unwrap()
+        };
+        let res = app.clone().oneshot(req(Some("gzip, br"))).await.unwrap();
+        assert_eq!(res.headers()[header::CONTENT_ENCODING], "gzip");
+        let res = app.oneshot(req(None)).await.unwrap();
+        assert!(res.headers().get(header::CONTENT_ENCODING).is_none());
+        assert!(json_of(res).await.get("map").is_some());
     }
 
     #[tokio::test]

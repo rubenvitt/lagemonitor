@@ -407,7 +407,7 @@ pub fn spawn(state: AppState) {
         }
     });
 
-    let http = reqwest::Client::new();
+    let http = crate::http::client();
     let nina_base: Url = NINA_BASE.parse().expect("gültige Konstante");
     let weather_base: Url = BRIGHT_SKY_BASE.parse().expect("gültige Konstante");
 

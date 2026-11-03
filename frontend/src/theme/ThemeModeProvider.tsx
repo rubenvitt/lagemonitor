@@ -2,20 +2,7 @@
 // Übernommen aus Lifeline Hub 3eb9115f2 (16.10.2026): frontend/src/theme/ThemeModeProvider.tsx (Speicherschlüssel lagemonitor.*)
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ConfigProvider } from 'antd';
-import deDE from 'antd/locale/de_DE';
-import {
-  antdAlgorithmus,
-  antdKaestchen,
-  antdKlappkopf,
-  antdKnopf,
-  antdKomponenten,
-  antdOptionsknopf,
-  antdToken,
-  farbenDunkel,
-  farbenHell,
-  type Dichte,
-} from './tokens';
+import type { Dichte } from './tokens';
 import { sicherLesen, sicherSchreiben } from '../lib/sichererSpeicher';
 import { DICHTE_DEFAULT, startDichte } from './dichte';
 import {
@@ -149,8 +136,7 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.colorScheme = effektiv;
   }, [effektiv]);
 
-  // Das Merkmal am <html> schaltet die `[data-dichte='…']`-Blöcke in `rollen.css`; ohne es folgte
-  // nur die antd-Fläche und das handgeschriebene CSS bliebe kompakt. Gesetzt für ALLE Stufen:
+  // Das Merkmal am <html> schaltet die `[data-dichte='…']`-Blöcke in `rollen.css`. Gesetzt für ALLE Stufen:
   // `kompakt` lebt unter `:root`. Wer einen `[data-dichte='kompakt']`-Block ergänzt, zieht
   // `DICHTE_BLOECKE` in `rollen.guard.test.ts` nach.
   useEffect(() => {
@@ -159,18 +145,13 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
 
   // Die Helligkeit wirkt ausschließlich über dieses Merkmal (LFH-397): die schwarze
   // Deckschicht in `rollen.css` liest `--lfh-abdunkelung`. Gesetzt wird die WIRKSAME Stufe,
-  // nicht die Wahl — sonst dimmte die Anzeige an der Sperre vorbei. Paletten und
-  // antd-Tokens bleiben unberührt (design.md D4).
+  // nicht die Wahl — sonst dimmte die Anzeige an der Sperre vorbei. Die Paletten
+  // bleiben unberührt (design.md D4).
   useEffect(() => {
     const wurzel = document.documentElement;
     wurzel.dataset.helligkeit = String(helligkeitWirksam);
     wurzel.style.setProperty('--lfh-abdunkelung', String(abdunkelung(helligkeitWirksam)));
   }, [helligkeitWirksam]);
-
-  const knopf = useMemo(() => antdKnopf(dichte), [dichte]);
-  const klappkopf = useMemo(() => antdKlappkopf(dichte), [dichte]);
-  const kaestchen = useMemo(() => antdKaestchen(dichte), [dichte]);
-  const optionsknopf = useMemo(() => antdOptionsknopf(dichte), [dichte]);
 
   const wert = useMemo<ThemeModeWert>(
     () => ({
@@ -201,32 +182,7 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeModeContext.Provider value={wert}>
-      <ConfigProvider
-        locale={deDE}
-        // Boden der kurzen Achse (LFH-381): die Breite eines beschrifteten Knopfs folgt der Staffel
-        // nur über diesen Kontext-Stil.
-        button={knopf}
-        // Boden des Klappkopfs (LFH-653): antd rechnet den Kopf aus der Schrift, nicht aus
-        // `controlHeight`; der Kontext erreicht jedes `Collapse` auf einmal.
-        collapse={klappkopf}
-        // Boden des beschrifteten Kästchens (LFH-907): antd hat für die Höhe des Labels kein
-        // Komponenten-Token, es wäre nur so hoch wie seine Schrift.
-        checkbox={kaestchen}
-        // Boden des beschrifteten Optionsknopfs (LFH-1048): gebaut wie das Kästchen-Label.
-        radio={optionsknopf}
-        theme={{
-          // Farbrollen je Modus aus derselben Quelle wie `rollen.css`; die Dichte hängt hier und nicht
-          // an einer Größen-Prop je Element (die endet bei 40 px). `antdToken` setzt die kleine
-          // Steuerhöhe mit, sonst rechnete antd sie unter den Boden aus A1 Gate 3.
-          token: antdToken(effektiv === 'dark' ? farbenDunkel : farbenHell, dichte),
-          // Nachts hält `antdAlgorithmus` die Signalfarben auf ihrem Rollenwert.
-          algorithm: antdAlgorithmus(effektiv === 'dark'),
-          // antds Switch rechnet seine Maße aus der Schrift statt aus `controlHeight` (LFH-380).
-          components: antdKomponenten(effektiv === 'dark' ? farbenDunkel : farbenHell, dichte),
-        }}
-      >
-        {children}
-      </ConfigProvider>
+      {children}
     </ThemeModeContext.Provider>
   );
 }

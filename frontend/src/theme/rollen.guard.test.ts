@@ -21,7 +21,6 @@ import {
   type Dichte,
   type Farbrollen,
 } from './tokens';
-import { theme } from 'antd';
 import { seitenrinne } from './tokens';
 import { SCHRIFTSCHNITTE } from './schriften';
 import {
@@ -304,9 +303,8 @@ describe('Seitenrinne — CSS und TS tragen dieselben Stufen (LFH-329 · B1)', (
   });
 
   it('ab der md-Schwelle trägt sie die volle Rinne', () => {
-    // Die Schwelle ist antds `md`, damit CSS- und JS-Achse dieselbe Zahl tragen.
-    const md = theme.getDesignToken().screenMD;
-    expect(md).toBe(768);
+    // Die Schwelle ist die frühere antd-`md` (768 px), damit CSS- und JS-Achse dieselbe Zahl tragen.
+    const md = 768;
     expect(medienblock(md)['--lfh-seiten-polsterung']).toBe(`${seitenrinne.breit}px`);
   });
 

@@ -17,6 +17,10 @@ struct DashboardEntry {
 struct DashboardPayload {
     #[serde(default)]
     data: DashboardData,
+    /// Ändert sich mit jeder neuen Fassung der Warnung; daran erkennt der Abruf, ob er CAP und
+    /// GeoJSON neu holen muss.
+    hash: Option<String>,
+    version: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Default)]
@@ -56,8 +60,18 @@ fn provider_from_name(name: &str) -> Option<Provider> {
     })
 }
 
-/// IDs der Warnungen samt Anbieter (falls das Dashboard ihn nennt).
-pub fn parse_dashboard(body: &[u8]) -> Result<Vec<(String, Option<Provider>)>, SourceError> {
+/// Eine Warnung, wie das Dashboard sie listet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Listed {
+    pub id: String,
+    /// Anbieter, falls das Dashboard ihn nennt.
+    pub provider: Option<Provider>,
+    /// Fassung der Warnung (`payload.hash`, sonst `payload.version`); `None`, wenn das Dashboard
+    /// keine nennt: dann wird die Warnung jedes Mal neu geholt.
+    pub revision: Option<String>,
+}
+
+pub fn parse_dashboard(body: &[u8]) -> Result<Vec<Listed>, SourceError> {
     let entries: Vec<DashboardEntry> =
         serde_json::from_slice(body).map_err(|e| SourceError::Parse(format!("Dashboard: {e}")))?;
     Ok(entries
@@ -69,7 +83,16 @@ pub fn parse_dashboard(body: &[u8]) -> Result<Vec<(String, Option<Provider>)>, S
                 .provider
                 .as_deref()
                 .and_then(provider_from_name);
-            (e.id, provider)
+            let revision = e
+                .payload
+                .hash
+                .filter(|h| !h.is_empty())
+                .or_else(|| e.payload.version.map(|v| format!("v{v}")));
+            Listed {
+                id: e.id,
+                provider,
+                revision,
+            }
         })
         .collect())
 }
@@ -139,6 +162,7 @@ pub fn parse_warning(
         expires: info.expires,
         sender_name: info.sender_name,
         geometry: parse_geometry(geojson),
+        revision: None,
     })
 }
 
@@ -156,9 +180,11 @@ async fn fetch_one(
     parse_warning(id, provider, &cap, geojson.as_deref())
 }
 
-/// `previous`: letzter gespeicherter Stand. Ist eine gelistete Warnung nicht abrufbar, gilt ihr
-/// letzter Stand; fehlt der, ist der ganze Abruf ein Fehler. Sonst verschwände eine Warnung still,
-/// und der Bildschirm zeigte womöglich Ruhe.
+/// `previous`: letzter gespeicherter Stand. Nennt das Dashboard für eine Warnung dieselbe Fassung wie
+/// der letzte Stand, gilt der ohne neuen Abruf: Das Dashboard kommt jede Minute, CAP und GeoJSON
+/// (zusammen oft zig Kilobyte je Warnung) nur bei einer neuen Fassung. Ist eine gelistete Warnung
+/// nicht abrufbar, gilt ihr letzter Stand; fehlt der, ist der ganze Abruf ein Fehler. Sonst
+/// verschwände eine Warnung still, und der Bildschirm zeigte womöglich Ruhe.
 pub async fn fetch(
     http: &reqwest::Client,
     base: &Url,
@@ -167,9 +193,21 @@ pub async fn fetch(
 ) -> Result<Vec<Warning>, SourceError> {
     let dashboard = get_bytes(http, endpoint(base, &format!("dashboard/{ars}.json"))?).await?;
     let mut warnings = Vec::new();
-    for (id, provider) in parse_dashboard(&dashboard)? {
+    for Listed {
+        id,
+        provider,
+        revision,
+    } in parse_dashboard(&dashboard)?
+    {
+        let unchanged = previous
+            .iter()
+            .find(|w| w.id == id && revision.is_some() && w.revision == revision);
+        if let Some(old) = unchanged {
+            warnings.push(old.clone());
+            continue;
+        }
         match fetch_one(http, base, &id, provider).await {
-            Ok(w) => warnings.push(w),
+            Ok(w) => warnings.push(Warning { revision, ..w }),
             Err(e) => {
                 let old = previous.iter().find(|w| w.id == id).ok_or(e)?;
                 tracing::warn!(%id, "NINA-Warnung nicht abrufbar, letzter Stand bleibt");
@@ -192,7 +230,7 @@ pub(crate) mod tests {
     const GEOJSON: &[u8] = include_bytes!("../../tests/fixtures/nina/geojson-dwd.json");
 
     pub(crate) fn dwd_id() -> String {
-        parse_dashboard(FULL).unwrap().remove(0).0
+        parse_dashboard(FULL).unwrap().remove(0).id
     }
 
     #[test]
@@ -205,9 +243,13 @@ pub(crate) mod tests {
         let entries: Vec<serde_json::Value> = serde_json::from_slice(FULL).unwrap();
         let ids = parse_dashboard(FULL).unwrap();
         assert_eq!(ids.len(), entries.len());
-        assert_eq!(ids[0].0, entries[0]["id"].as_str().unwrap());
-        assert_eq!(ids[0].1, Some(Provider::Dwd));
-        assert_eq!(ids[1].1, Some(Provider::Mowas));
+        assert_eq!(ids[0].id, entries[0]["id"].as_str().unwrap());
+        assert_eq!(ids[0].provider, Some(Provider::Dwd));
+        assert_eq!(ids[1].provider, Some(Provider::Mowas));
+        assert_eq!(
+            ids[0].revision.as_deref(),
+            entries[0]["payload"]["hash"].as_str()
+        );
     }
 
     #[test]
@@ -292,7 +334,7 @@ pub(crate) mod tests {
         let base = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
-        let warnings = fetch(&reqwest::Client::new(), &base, "150850000000", &[])
+        let warnings = fetch(&crate::http::client(), &base, "150850000000", &[])
             .await
             .unwrap();
         assert_eq!(warnings.len(), 2);
@@ -334,7 +376,7 @@ pub(crate) mod tests {
         let mut old = parse_warning(&first, Some(Provider::Dwd), CAP_DWD, None).unwrap();
         old.headline = "letzter Stand".into();
         let base = serve(move |f| f.starts_with(&first)).await;
-        let warnings = fetch(&reqwest::Client::new(), &base, "1", &[old])
+        let warnings = fetch(&crate::http::client(), &base, "1", &[old])
             .await
             .unwrap();
         assert_eq!(warnings.len(), 2);
@@ -342,12 +384,45 @@ pub(crate) mod tests {
         assert_eq!(warnings[1].provider, Provider::Mowas);
     }
 
+    /// Gleiche Fassung im Dashboard: kein CAP-Abruf (hier antwortete jeder mit 500), der letzte Stand gilt.
+    #[tokio::test]
+    async fn unchanged_revision_is_not_fetched_again() {
+        let listed = parse_dashboard(FULL).unwrap();
+        let previous: Vec<Warning> = listed
+            .iter()
+            .map(|l| Warning {
+                headline: "letzter Stand".into(),
+                revision: l.revision.clone(),
+                ..parse_warning(&l.id, l.provider, CAP_DWD, None).unwrap()
+            })
+            .collect();
+        let base = serve(|_| true).await;
+        let warnings = fetch(&crate::http::client(), &base, "1", &previous)
+            .await
+            .unwrap();
+        assert_eq!(warnings, previous);
+    }
+
+    #[tokio::test]
+    async fn new_revision_is_fetched_and_remembered() {
+        let listed = parse_dashboard(FULL).unwrap();
+        let mut old = parse_warning(&listed[0].id, listed[0].provider, CAP_DWD, None).unwrap();
+        old.headline = "alte Fassung".into();
+        old.revision = Some("veraltet".into());
+        let base = serve(|_| false).await;
+        let warnings = fetch(&crate::http::client(), &base, "1", &[old])
+            .await
+            .unwrap();
+        assert_eq!(warnings[0].headline, "Amtliche WARNUNG vor STURMBÖEN");
+        assert_eq!(warnings[0].revision, listed[0].revision);
+    }
+
     #[tokio::test]
     async fn broken_cap_without_previous_is_error() {
         let first = dwd_id();
         let base = serve(move |f| f.starts_with(&first)).await;
         assert!(
-            fetch(&reqwest::Client::new(), &base, "1", &[])
+            fetch(&crate::http::client(), &base, "1", &[])
                 .await
                 .is_err()
         );
@@ -357,7 +432,7 @@ pub(crate) mod tests {
     async fn all_caps_failing_is_error() {
         let base = serve(|_| true).await;
         assert!(
-            fetch(&reqwest::Client::new(), &base, "1", &[])
+            fetch(&crate::http::client(), &base, "1", &[])
                 .await
                 .is_err()
         );

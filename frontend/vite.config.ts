@@ -48,7 +48,23 @@ export default defineConfig({
       '/api': { target: BACKEND, changeOrigin: false },
     },
   },
-  build: { sourcemap: false, chunkSizeWarningLimit: 2500 },
+  build: {
+    sourcemap: false,
+    chunkSizeWarningLimit: 2500,
+    rolldownOptions: {
+      output: {
+        // Karte und React in eigene Bündel: Sie ändern sich nur mit einem Paket-Update. Bei einem
+        // Update der Oberfläche holt eine offene Seite (Online-Instanz) dann nur das kleine
+        // App-Bündel neu, die Karte (1 MB) bleibt im Cache.
+        codeSplitting: {
+          groups: [
+            { name: 'maplibre', test: /node_modules[\\/].*maplibre-gl/ },
+            { name: 'react', test: /node_modules[\\/].*(react|react-dom|scheduler)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

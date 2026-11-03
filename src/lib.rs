@@ -4,6 +4,7 @@ pub mod config;
 pub mod contract;
 pub mod db;
 pub mod error;
+pub mod http;
 pub mod poller;
 pub mod settings;
 pub mod sources;
