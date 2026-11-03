@@ -194,7 +194,12 @@ async fn geojson(http: &reqwest::Client, base: &Url, id: &str) -> (Option<Vec<u8
         return (None, false);
     }
     match res.bytes().await {
-        Ok(bytes) => (Some(bytes.to_vec()), true),
+        // Unlesbares JSON gilt wie ein Fehlabruf; leere `features` sind dagegen eine Antwort.
+        Ok(bytes) => {
+            let readable = serde_json::from_slice::<serde_json::Value>(&bytes)
+                .is_ok_and(|v| v.get("features").is_some_and(|f| f.is_array()));
+            (Some(bytes.to_vec()), readable)
+        }
         Err(_) => (None, false),
     }
 }
@@ -456,8 +461,10 @@ pub(crate) mod tests {
                 "/warnings/{file}",
                 get(
                     |axum::extract::Path(file): axum::extract::Path<String>| async move {
-                        if file.ends_with(".geojson") {
+                        if file.ends_with(".geojson") && file.starts_with("dwd") {
                             (StatusCode::BAD_GATEWAY, Vec::new())
+                        } else if file.ends_with(".geojson") {
+                            (StatusCode::OK, b"{\"features\":".to_vec())
                         } else if file.starts_with("dwd") {
                             (StatusCode::OK, CAP_DWD.to_vec())
                         } else {
@@ -472,6 +479,7 @@ pub(crate) mod tests {
         let warnings = fetch(&crate::http::client(), &base, "1", &[])
             .await
             .unwrap();
+        assert_eq!(warnings.len(), 2);
         assert!(warnings.iter().all(|w| w.revision.is_none()));
     }
 
