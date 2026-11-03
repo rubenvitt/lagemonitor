@@ -9,7 +9,7 @@ import type { Vehicle } from '../contract/Vehicle';
 import type { Warning } from '../contract/Warning';
 import { useThemeMode } from '../theme/ThemeModeProvider';
 import { farbenDunkel, farbenHell } from '../theme/tokens';
-import { incidentFeatures, radarTiles, speedCameraFeatures, trafficTiles, vehicleMarks, warningAreas } from './mapData';
+import { incidentFeatures, radarTiles, speedCameraFeatures, surroundingBounds, trafficTiles, vehicleMarks, warningAreas } from './mapData';
 import { aircraftPoints, areas, boundsKey, coloredTracks, coveredByDrone, suchlageBounds } from './suchlageData';
 
 interface Props {
@@ -30,7 +30,7 @@ interface Props {
   incidents: TrafficIncident[];
   /** Feste Blitzer (nur online); leer, wenn aus. */
   speedCameras: SpeedCamera[];
-  /** Fahrzeuge aus der Suite; das eigene steht am GPS-Fix (`lat`/`lon`) statt am Punkt. */
+  /** Fahrzeuge und feste Orte aus der Suite; das eigene Fahrzeug steht am GPS-Fix (`lat`/`lon`). Einen Standortpunkt gibt es nicht. */
   vehicles: Vehicle[];
   /** Laufender Suchlage-Einsatz; `null` ohne Einsatz oder mit Modul aus. */
   suchlage: SuchlageView | null;
@@ -94,10 +94,6 @@ export default function MapPanel({
       m.addLayer({ id: 'verkehr', type: 'raster', source: 'verkehr', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.8 } });
       m.addSource('radar', { type: 'raster', tiles: [radarTiles(0)], tileSize: 256, attribution: '© DWD' });
       m.addSource('warngebiete', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      m.addSource('standort', {
-        type: 'geojson',
-        data: { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } },
-      });
       m.addLayer({ id: 'radar', type: 'raster', source: 'radar', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.7 } });
       m.addLayer({ id: 'warngebiete-flaeche', type: 'fill', source: 'warngebiete', paint: { 'fill-color': kindColor, 'fill-opacity': 0.14 } });
       m.addLayer({
@@ -107,7 +103,7 @@ export default function MapPanel({
         paint: { 'line-color': kindColor, 'line-width': 2, 'line-dasharray': [3, 2] },
       });
       // Baustellen und Blitzer neutral (Text- und Grundfarbe): Rot und Gelb gehören den Warnungen,
-      // Blau dem Standort und Suchlage. Eine Baustelle ist eine gestreifte Linie, eine Sperrung breiter.
+      // Blau Suchlage. Eine Baustelle ist eine gestreifte Linie, eine Sperrung breiter.
       m.addSource('baustellen', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       m.addSource('blitzer', {
         type: 'geojson',
@@ -167,13 +163,6 @@ export default function MapPanel({
         paint: { 'line-color': ['get', 'color'], 'line-width': ['case', ['get', 'running'], 4, 3], 'line-opacity': 0.95 },
       });
       m.addLayer({
-        id: 'standort-ring',
-        type: 'circle',
-        source: 'standort',
-        paint: { 'circle-radius': 22, 'circle-color': 'transparent', 'circle-stroke-color': f.bedien, 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.5 },
-      });
-      m.addLayer({ id: 'standort-punkt', type: 'circle', source: 'standort', paint: { 'circle-radius': 9, 'circle-color': f.bedien } });
-      m.addLayer({
         id: 'drohnen',
         type: 'circle',
         source: 'drohnen',
@@ -199,11 +188,6 @@ export default function MapPanel({
     if (!map?.style) return;
     map.getSource<GeoJSONSource>('warngebiete')?.setData(warningAreas(band, listed) as Parameters<GeoJSONSource['setData']>[0]);
   }, [map, band, listed]);
-
-  useEffect(() => {
-    if (!map?.style) return;
-    map.getSource<GeoJSONSource>('standort')?.setData({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } });
-  }, [map, lat, lon]);
 
   useEffect(() => {
     if (!map?.style) return;
@@ -237,7 +221,6 @@ export default function MapPanel({
   // Sichtbares ändert; `map` in den Abhängigkeiten, weil eine neu gebaute Karte (Theme, Zoom) leer beginnt.
   const marks = useMemo(() => vehicleMarks(vehicles, nowMs, { lat, lon }), [vehicles, nowMs, lat, lon]);
   const marksKey = JSON.stringify(marks);
-  const ownShown = vehicles.some((v) => v.own);
   useEffect(() => {
     if (!map?.style) return;
     const markers = marks.map((v) => {
@@ -253,12 +236,10 @@ export default function MapPanel({
       // Oben verankert und um die halbe Zeichenhöhe hoch: die Mitte des Zeichens liegt auf der Position.
       return new Marker({ element: el, anchor: 'top', offset: [0, -FAHRZEUG_PX / 2] }).setLngLat([v.lon, v.lat]).addTo(map);
     });
-    // Das eigene Fahrzeug ersetzt den Standortpunkt.
-    for (const id of ['standort-punkt', 'standort-ring']) map.setLayoutProperty(id, 'visibility', ownShown ? 'none' : 'visible');
     return () => markers.forEach((m) => m.remove());
     // `marks` steckt in `marksKey`; ein neues Array je Abfrage soll die Marker nicht neu setzen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, marksKey, ownShown]);
+  }, [map, marksKey]);
 
   // Einpassen nur, wenn sich der Rahmen merklich ändert (neuer Einsatz, neues Gebiet) oder das
   // Drohnenbild ein- bzw. ausfährt – nicht bei jedem Spurpunkt.
@@ -266,15 +247,24 @@ export default function MapPanel({
   const key = boundsKey(bounds);
   // Auf rund 100 m: Das GPS zittert, die Karte soll dabei stillhalten.
   const centerKey = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  // Ohne Einsatz: um das eigene Zeichen, so weit heraus, dass die Zeichen im Umkreis mit drauf sind.
+  const around = surroundingBounds(marks, { lat, lon });
+  const aroundKey = JSON.stringify(around);
   useEffect(() => {
     if (!map?.style) return;
     const right = droneOpen ? Math.round(map.getContainer().clientWidth * coveredByDrone(sideColumn)) : 0;
     const padding = { top: 50, bottom: 50, left: 50, right: right + 50 };
-    if (bounds) map.fitBounds(bounds, { padding, maxZoom: 15, duration: 1200 });
-    else map.easeTo({ center: [lon, lat], zoom, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
-    // `bounds` steckt in `key`; ein neues Array je Abfrage soll nicht neu einpassen.
+    if (bounds) {
+      map.fitBounds(bounds, { padding, maxZoom: 15, duration: 1200 });
+      return;
+    }
+    // Rand für Zeichen und Funkrufnamen, die sonst halb aus dem Bild ragten.
+    const fit = around ? map.cameraForBounds(around, { padding: { top: 70, bottom: 90, left: 120, right: right + 120 } }) : undefined;
+    const z = Math.min(zoom, fit?.zoom ?? zoom);
+    map.easeTo({ center: [lon, lat], zoom: z, padding: { top: 0, bottom: 0, left: 0, right }, duration: 800 });
+    // `bounds` steckt in `key`, `around` in `aroundKey`; ein neues Array je Abfrage soll nicht neu einpassen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, key, droneOpen, sideColumn, centerKey, zoom]);
+  }, [map, key, droneOpen, sideColumn, centerKey, zoom, aroundKey]);
 
   return (
     <section className="lm-paneel lm-karte">

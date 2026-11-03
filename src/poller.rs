@@ -95,6 +95,10 @@ pub async fn location(state: &AppState, cfg: &settings::Settings) -> Location {
         Some(_) => store::load::<Position>(&state.pool, GPS_KEY).await,
         None => None,
     };
+    // Ein fester Ort bleibt fest, auch wenn der Rechner zufällig ein gpsd hat.
+    if cfg.vehicles.iter().any(|v| v.own && v.fixed) {
+        return cfg.location.clone();
+    }
     match fix {
         Some((_, p)) => Location {
             lat: p.lat,
@@ -102,6 +106,20 @@ pub async fn location(state: &AppState, cfg: &settings::Settings) -> Location {
             label: cfg.location.label.clone(),
         },
         None => cfg.location.clone(),
+    }
+}
+
+/// Rastermaß für den Ort der Verkehrsabfragen, rund 5 km: Fährt das Fahrzeug, kommt mit jeder Abholung ein neuer
+/// Ort aus der Suite; neu abgefragt wird erst, wenn es eine Rasterzelle weiter ist (TomTom zählt jede Abfrage).
+const TRAFFIC_GRID_DEG: f64 = 0.05;
+
+/// Der Ort, um den Baustellen und Blitzer abgefragt werden: `location` auf das Raster gerückt.
+pub fn traffic_location(location: &Location) -> Location {
+    let snap = |v: f64| (v / TRAFFIC_GRID_DEG).round() * TRAFFIC_GRID_DEG;
+    Location {
+        lat: snap(location.lat),
+        lon: snap(location.lon),
+        label: location.label.clone(),
     }
 }
 
@@ -280,23 +298,20 @@ pub async fn poll_traffic(
         return;
     };
     if let Some(key) = cfg.traffic.key_for(cfg.traffic.incidents) {
-        let k = incidents_key(&cfg.location);
+        let loc = traffic_location(&cfg.location);
+        let k = incidents_key(&loc);
         if traffic_due(state, &k, INCIDENTS_INTERVAL_MS, now).await {
-            let (http, base, key, loc) = (
-                http.clone(),
-                tomtom_base.clone(),
-                key.to_string(),
-                cfg.location.clone(),
-            );
+            let (http, base, key, loc) = (http.clone(), tomtom_base.clone(), key.to_string(), loc);
             let fetcher =
                 move || async move { tomtom::fetch_incidents(&http, &base, &key, &loc).await };
             run_once(state, &k, fetcher, now_ms).await;
         }
     }
     if cfg.traffic.speed_cameras && state.boot.online() {
-        let k = speed_cameras_key(&cfg.location);
+        let loc = traffic_location(&cfg.location);
+        let k = speed_cameras_key(&loc);
         if traffic_due(state, &k, SPEED_CAMERA_INTERVAL_MS, now).await {
-            let (http, base, loc) = (http.clone(), overpass.clone(), cfg.location.clone());
+            let (http, base) = (http.clone(), overpass.clone());
             let fetcher = move || async move { osm::fetch(&http, &base, &loc).await };
             run_once(state, &k, fetcher, now_ms).await;
         }
@@ -632,6 +647,21 @@ mod tests {
         assert_eq!(incidents_key(&location), "tomtom:52.9656,10.5594");
     }
 
+    #[test]
+    fn traffic_is_asked_on_a_grid_not_at_every_position() {
+        let at = |lat: f64, lon: f64| Location {
+            lat,
+            lon,
+            label: "x".into(),
+        };
+        let key = |lat, lon| incidents_key(&traffic_location(&at(lat, lon)));
+        assert_eq!(key(52.9656, 10.5594), "tomtom:52.9500,10.5500");
+        // Ein paar hundert Meter weiter: dieselbe Abfrage.
+        assert_eq!(key(52.9656, 10.5594), key(52.9690, 10.5640));
+        // Ein paar Kilometer weiter: eine neue.
+        assert_ne!(key(52.9656, 10.5594), key(53.0100, 10.5594));
+    }
+
     async fn gps_state(addr: Option<SocketAddr>) -> AppState {
         let boot = crate::config::BootConfig::from_lookup(move |k| {
             (k == "LAGEMONITOR_GPSD").then(|| addr.map(|a| a.to_string()))?
@@ -656,6 +686,22 @@ mod tests {
         let loc = location(&state, &cfg).await;
         assert_eq!((loc.lat, loc.lon), (52.963709, 10.577172));
         assert_eq!(loc.label, cfg.location.label);
+
+        // Steht der Monitor an einem festen Ort, gilt der, nicht das gpsd.
+        let fixed = settings::Settings {
+            vehicles: vec![crate::contract::Vehicle {
+                id: "ort".into(),
+                call_sign: "Unterkunft".into(),
+                symbol: "<svg/>".into(),
+                lat: cfg.location.lat,
+                lon: cfg.location.lon,
+                at_ms: 0,
+                own: true,
+                fixed: true,
+            }],
+            ..cfg.clone()
+        };
+        assert_eq!(location(&state, &fixed).await, cfg.location);
 
         let view = crate::web::monitor::get(axum::extract::State(state))
             .await

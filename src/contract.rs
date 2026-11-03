@@ -336,6 +336,9 @@ pub struct Vehicle {
     pub at_ms: i64,
     /// Das Fahrzeug dieses Monitors: die Karte zeichnet es am eigenen GPS-Fix, nicht an der Meldung.
     pub own: bool,
+    /// Ein fester Ort (etwa die Unterkunft) statt eines Fahrzeugs: steht immer an `lat`/`lon`, veraltet nie.
+    #[serde(default)]
+    pub fixed: bool,
 }
 
 /// QR-Code fürs Ehrenamt: wohin er führt und der Satz daneben. Nur `https://`.

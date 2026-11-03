@@ -95,7 +95,7 @@ async fn traffic(state: &AppState, cfg: &settings::Settings, now_ms: i64) -> Tra
         Some(_) => Some(
             sourced::<Vec<TrafficIncident>>(
                 state,
-                &poller::incidents_key(&cfg.location),
+                &poller::incidents_key(&poller::traffic_location(&cfg.location)),
                 INCIDENTS_STALE_MS,
                 now_ms,
             )
@@ -107,7 +107,7 @@ async fn traffic(state: &AppState, cfg: &settings::Settings, now_ms: i64) -> Tra
         Some(
             sourced::<Vec<SpeedCamera>>(
                 state,
-                &poller::speed_cameras_key(&cfg.location),
+                &poller::speed_cameras_key(&poller::traffic_location(&cfg.location)),
                 SPEED_CAMERA_STALE_MS,
                 now_ms,
             )
@@ -184,11 +184,12 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
             .collect(),
         recruitment: cfg.recruitment,
         traffic,
-        // Wie die Suite: nach einem Tag ohne Meldung ist ein Fahrzeug weg, auch ohne neue Abholung.
+        // Wie die Suite: nach einem Tag ohne Meldung ist ein Fahrzeug weg, auch ohne neue Abholung. Ein fester
+        // Ort meldet nichts und bleibt.
         vehicles: cfg
             .vehicles
             .into_iter()
-            .filter(|v| now_ms - v.at_ms <= VEHICLE_HIDDEN_MS)
+            .filter(|v| v.fixed || now_ms - v.at_ms <= VEHICLE_HIDDEN_MS)
             .collect(),
     }))
 }

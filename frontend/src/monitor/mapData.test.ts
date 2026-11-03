@@ -1,4 +1,4 @@
-import { RADAR_MAX_AGE_MS, TRAFFIC_TILE_MS, VEHICLE_STALE_MS, incidentFeatures, radarAt, speedCameraFeatures, trafficTiles, vehicleMarks, warningAreas } from './mapData';
+import { RADAR_MAX_AGE_MS, TRAFFIC_TILE_MS, VEHICLE_STALE_MS, incidentFeatures, radarAt, speedCameraFeatures, surroundingBounds, trafficTiles, vehicleMarks, warningAreas, type VehicleMark } from './mapData';
 import { NOW, makeView, makeWarning } from './testViews';
 
 const square = {
@@ -54,7 +54,7 @@ test('Baustellen ohne brauchbare Geometrie fallen weg, Blitzer werden Punkte', (
 test('Fahrzeuge: das eigene am GPS-Fix, fremde an der Meldung, nach zehn Minuten veraltet mit Uhrzeit', () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>';
   const at = NOW - VEHICLE_STALE_MS;
-  const fremd = { id: 'f', callSign: 'Rotkreuz Uelzen 83-1', symbol: svg, lat: 53, lon: 10.4, atMs: at, own: false };
+  const fremd = { id: 'f', callSign: 'Rotkreuz Uelzen 83-1', symbol: svg, lat: 53, lon: 10.4, atMs: at, own: false, fixed: false };
   const eigen = { ...fremd, id: 'e', callSign: 'Rotkreuz Uelzen 40-12-1', atMs: at - 3_600_000, own: true };
   const [f, e] = vehicleMarks([fremd, eigen], NOW, { lat: 52.96, lon: 10.57 });
   expect(f).toMatchObject({ lat: 53, lon: 10.4, stand: null });
@@ -62,4 +62,20 @@ test('Fahrzeuge: das eigene am GPS-Fix, fremde an der Meldung, nach zehn Minuten
   expect(e).toMatchObject({ lat: 52.96, lon: 10.57, stand: null });
   const [alt] = vehicleMarks([{ ...fremd, atMs: at - 1 }], NOW, { lat: 0, lon: 0 });
   expect(alt.stand).toMatch(/^Stand \d{2}:\d{2}$/);
+});
+
+test('Ein fester Ort steht an seinem Ort, auch der eigene, und veraltet nie', () => {
+  const ort = { id: 'o', callSign: 'Unterkunft', symbol: '<svg/>', lat: 52.9, lon: 10.5, atMs: 0, own: true, fixed: true };
+  expect(vehicleMarks([ort], NOW, { lat: 1, lon: 2 })[0]).toMatchObject({ lat: 52.9, lon: 10.5, stand: null });
+});
+
+test('Der Rahmen um den eigenen Standort fasst frische Zeichen bis 50 km, mit dem Standort in der Mitte', () => {
+  const here = { lat: 52.97, lon: 10.56 };
+  const mark = (lat: number, lon: number, stand: string | null = null): VehicleMark => ({ id: `${lat}`, callSign: 'x', src: '', lat, lon, stand });
+  // Nur das eigene Zeichen (am Standort): kein Rahmen, die eingestellte Zoomstufe gilt.
+  expect(surroundingBounds([mark(52.97, 10.56)], here)).toBeNull();
+  // Ein Fahrzeug gut 11 km nördlich: symmetrisch um den Standort.
+  expect(surroundingBounds([mark(52.97, 10.56), mark(53.07, 10.6)], here)).toEqual([[10.52, 52.87], [10.6, 53.07]]);
+  // Veraltet oder weiter als 50 km: zählt nicht.
+  expect(surroundingBounds([mark(53.07, 10.6, 'Stand 07:00'), mark(53.6, 10.56)], here)).toBeNull();
 });
