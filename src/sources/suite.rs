@@ -8,8 +8,8 @@ use serde::Deserialize;
 use super::{SourceError, endpoint};
 use crate::config::SuiteLink;
 use crate::contract::{
-    Location, Modules, Notice, NoticeCategory, NoticeColor, NoticeIcon, Position, Recruitment,
-    Region, Severity, Vehicle,
+    Location, MapObject, Modules, Notice, NoticeCategory, NoticeColor, NoticeIcon, Position,
+    Recruitment, Region, Severity, Vehicle,
 };
 use crate::settings::{
     MAP_ZOOM_DEFAULT, MAP_ZOOM_MAX, MAP_ZOOM_MIN, PublicLink, Settings, SuchlageLink, TrafficLink,
@@ -44,6 +44,10 @@ struct Body {
     /// Fahrzeuge auf der Karte (LGM-10); eine Suite ohne das Feld hat keine.
     #[serde(default)]
     vehicles: Vec<RawVehicle>,
+    /// Feste Objekte der Lagekarte (IDA-348); eine Suite ohne das Feld hat keine. Roh gelesen, damit ein
+    /// kaputter Eintrag nur sich selbst kostet und nicht die ganze Konfiguration.
+    #[serde(default)]
+    map_objects: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +88,72 @@ fn vehicle(v: RawVehicle) -> Option<Vehicle> {
         own: v.own,
         fixed: v.fixed,
     })
+}
+
+#[derive(Deserialize)]
+struct RawMapObject {
+    id: String,
+    kind: String,
+    name: String,
+    #[serde(default)]
+    symbol: Option<String>,
+    #[serde(default)]
+    color: Option<String>,
+    #[serde(default)]
+    ring: Option<Vec<[f64; 2]>>,
+    lat: f64,
+    lon: f64,
+}
+
+/// So viele Objekte schickt die Suite höchstens.
+const MAP_OBJECTS_MAX: usize = 200;
+/// Ein Ring hat mindestens drei Ecken plus den Schlusspunkt; mehr als 200 Ecken zeichnet die Suite nicht.
+const MAP_RING_LEN: std::ops::RangeInclusive<usize> = 4..=201;
+/// Länger wird abgeschnitten, damit eine Beschriftung die Karte nicht quert.
+const MAP_OBJECT_NAME_MAX: usize = 64;
+
+fn on_earth(lat: f64, lon: f64) -> bool {
+    (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
+}
+
+/// Ein Objekt, das sich nicht zeichnen lässt, fällt still weg; ein unbrauchbares Zeichen nur das Zeichen.
+fn map_object(raw: serde_json::Value) -> Option<MapObject> {
+    let o: RawMapObject = serde_json::from_value(raw).ok()?;
+    let name: String = o.name.trim().chars().take(MAP_OBJECT_NAME_MAX).collect();
+    if o.id.is_empty() || name.is_empty() || !on_earth(o.lat, o.lon) {
+        return None;
+    }
+    match o.kind.as_str() {
+        "point" => Some(MapObject::Point {
+            id: o.id,
+            name,
+            symbol: o
+                .symbol
+                .filter(|s| s.len() <= VEHICLE_SYMBOL_MAX && s.starts_with("<svg")),
+            lat: o.lat,
+            lon: o.lon,
+        }),
+        "area" => {
+            let ring = o.ring?;
+            let ok = MAP_RING_LEN.contains(&ring.len())
+                && ring.first() == ring.last()
+                && ring.iter().all(|&[lon, lat]| on_earth(lat, lon));
+            ok.then(|| MapObject::Area {
+                id: o.id,
+                name,
+                // Anders als bei Meldungen gilt eine unbekannte Farbe als Grau: eine Fläche ohne Kategorie.
+                color: o
+                    .color
+                    .as_deref()
+                    .and_then(palette)
+                    .unwrap_or(NoticeColor::Grey),
+                ring,
+                lat: o.lat,
+                lon: o.lon,
+            })
+        }
+        _ => None,
+    }
 }
 
 #[derive(Deserialize)]
@@ -138,17 +208,23 @@ const ALERT_LEAD_MAX: u32 = 60;
 const ICON_PATHS_MAX: usize = 8;
 const ICON_PATH_LEN_MAX: usize = 8_000;
 
-/// Eine unbekannte Farbe (neuere Suite) gilt als Blau, wie eine Meldung ohne Kategorie.
-fn color(c: &str) -> NoticeColor {
-    match c {
+/// Ein Schlüssel der Palette; `None` bei einem unbekannten (neuere Suite).
+fn palette(c: &str) -> Option<NoticeColor> {
+    Some(match c {
+        "blue" => NoticeColor::Blue,
         "teal" => NoticeColor::Teal,
         "green" => NoticeColor::Green,
         "ochre" => NoticeColor::Ochre,
         "orange" => NoticeColor::Orange,
         "purple" => NoticeColor::Purple,
         "grey" => NoticeColor::Grey,
-        _ => NoticeColor::Blue,
-    }
+        _ => return None,
+    })
+}
+
+/// Eine unbekannte Farbe (neuere Suite) gilt als Blau, wie eine Meldung ohne Kategorie.
+fn color(c: &str) -> NoticeColor {
+    palette(c).unwrap_or(NoticeColor::Blue)
 }
 
 /// Ein Zeichen sind reine SVG-Pfaddaten; alles andere fällt still weg, der Name bleibt.
@@ -263,6 +339,13 @@ pub fn parse(body: &[u8]) -> Result<Settings, SourceError> {
         traffic: traffic(raw.traffic),
         map_zoom: map_zoom(raw.map),
         vehicles: raw.vehicles.into_iter().filter_map(vehicle).collect(),
+        map_objects: raw
+            .map_objects
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(map_object)
+            .take(MAP_OBJECTS_MAX)
+            .collect(),
     })
 }
 
@@ -384,6 +467,126 @@ pub(crate) mod tests {
         assert!(!s.vehicles[0].fixed, "ohne Feld kein fester Ort");
         let fixed = body.replace(r#""own": true"#, r#""own": true, "fixed": true"#);
         assert!(parse(fixed.as_bytes()).unwrap().vehicles[0].fixed);
+    }
+
+    /// `EXAMPLE` mit `mapObjects` an der Wurzel.
+    fn with_map_objects(list: &str) -> String {
+        EXAMPLE.replace(
+            "\"suchlage\": {",
+            &format!(r#""mapObjects": {list}, "suchlage": {{"#),
+        )
+    }
+
+    fn map_object_ids(s: &Settings) -> Vec<&str> {
+        s.map_objects
+            .iter()
+            .map(|o| match o {
+                MapObject::Point { id, .. } | MapObject::Area { id, .. } => id.as_str(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn map_objects_are_read() {
+        let body = with_map_objects(
+            r#"[{ "id": "lk-def456", "kind": "area", "name": "Abschnitt Süd", "color": "teal",
+                  "ring": [[10.50, 52.90], [10.60, 52.90], [10.60, 52.95], [10.50, 52.90]], "lat": 52.92, "lon": 10.56 },
+                { "id": "lk-abc123", "kind": "point", "name": "Bereitstellungsraum Nord",
+                  "symbol": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>", "lat": 52.96, "lon": 10.57 }]"#,
+        );
+        let s = parse(body.as_bytes()).unwrap();
+        assert_eq!(
+            s.map_objects,
+            vec![
+                MapObject::Area {
+                    id: "lk-def456".into(),
+                    name: "Abschnitt Süd".into(),
+                    color: NoticeColor::Teal,
+                    ring: vec![[10.5, 52.9], [10.6, 52.9], [10.6, 52.95], [10.5, 52.9]],
+                    lat: 52.92,
+                    lon: 10.56,
+                },
+                MapObject::Point {
+                    id: "lk-abc123".into(),
+                    name: "Bereitstellungsraum Nord".into(),
+                    symbol: Some(r#"<svg xmlns="http://www.w3.org/2000/svg"></svg>"#.into()),
+                    lat: 52.96,
+                    lon: 10.57,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_suite_without_map_objects_has_none() {
+        assert!(parse(EXAMPLE.as_bytes()).unwrap().map_objects.is_empty());
+        let s = parse(with_map_objects("null").as_bytes()).unwrap();
+        assert!(s.map_objects.is_empty());
+    }
+
+    #[test]
+    fn unusable_map_objects_are_dropped_one_by_one() {
+        let ring = "[[10.5, 52.9], [10.6, 52.9], [10.6, 52.95], [10.5, 52.9]]";
+        let area = |id: &str, ring: &str, color: &str| {
+            format!(
+                r#"{{ "id": "{id}", "kind": "area", "name": "Fläche", "color": "{color}", "ring": {ring}, "lat": 52.92, "lon": 10.56 }}"#
+            )
+        };
+        let point = |id: &str, rest: &str| {
+            format!(r#"{{ "id": "{id}", "kind": "point", "name": "Wache", {rest} }}"#)
+        };
+        let list = [
+            area("gut", ring, "magenta"),
+            area("kurz", "[[10.5, 52.9], [10.6, 52.9], [10.5, 52.9]]", "teal"),
+            area(
+                "offen",
+                "[[10.5, 52.9], [10.6, 52.9], [10.6, 52.95], [10.5, 52.91]]",
+                "teal",
+            ),
+            area(
+                "ecke",
+                "[[10.5, 52.9], [190, 52.9], [10.6, 52.95], [10.5, 52.9]]",
+                "teal",
+            ),
+            area("ring-text", r#""kein Ring""#, "teal"),
+            r#"{ "id": "ohne-ring", "kind": "area", "name": "Fläche", "color": "teal", "lat": 52.92, "lon": 10.56 }"#.into(),
+            point("ohne-ort", r#""symbol": null"#),
+            point("breite", r#""symbol": null, "lat": 91, "lon": 10.5"#),
+            point("laenge", r#""symbol": null, "lat": 52.9, "lon": "10.5""#),
+            r#"{ "id": "art", "kind": "line", "name": "Weg", "lat": 52.9, "lon": 10.5 }"#.into(),
+            r#"{ "id": "leer", "kind": "point", "name": "  ", "symbol": null, "lat": 52.9, "lon": 10.5 }"#.into(),
+            point(
+                "skript",
+                r#""symbol": "<script>alert(1)</script>", "lat": 52.9, "lon": 10.5"#,
+            ),
+            r#""kein Objekt""#.into(),
+        ]
+        .join(",");
+        let s = parse(with_map_objects(&format!("[{list}]")).as_bytes()).unwrap();
+        assert_eq!(map_object_ids(&s), ["gut", "skript"]);
+        assert!(
+            matches!(
+                &s.map_objects[0],
+                MapObject::Area {
+                    color: NoticeColor::Grey,
+                    ..
+                }
+            ),
+            "unbekannte Farbe gilt als Grau"
+        );
+        assert!(
+            matches!(&s.map_objects[1], MapObject::Point { symbol: None, .. }),
+            "ein unbrauchbares Zeichen kostet nur das Zeichen"
+        );
+        assert_eq!(s.warn_threshold, Severity::Moderate, "der Rest gilt");
+    }
+
+    #[test]
+    fn at_most_200_map_objects() {
+        let point = r#"{ "id": "lk-p", "kind": "point", "name": "Wache", "symbol": null, "lat": 52.9, "lon": 10.5 }"#;
+        let list = vec![point; MAP_OBJECTS_MAX + 5].join(",");
+        let s = parse(with_map_objects(&format!("[{list}]")).as_bytes()).unwrap();
+        assert_eq!(s.map_objects.len(), MAP_OBJECTS_MAX);
     }
 
     #[test]

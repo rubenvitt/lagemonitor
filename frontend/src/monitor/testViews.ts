@@ -59,6 +59,7 @@ export function makeView(over: Partial<MonitorView> = {}): MonitorView {
     recruitment: null,
     traffic: { flow: false, flowError: null, incidents: null, speedCameras: null },
     vehicles: [],
+    mapObjects: [],
     ...over,
   };
 }

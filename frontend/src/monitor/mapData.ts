@@ -1,3 +1,5 @@
+import type { MapObject } from '../contract/MapObject';
+import type { NoticeColor } from '../contract/NoticeColor';
 import type { Sourced } from '../contract/Sourced';
 import type { SpeedCamera } from '../contract/SpeedCamera';
 import type { TrafficIncident } from '../contract/TrafficIncident';
@@ -115,6 +117,52 @@ export function vehicleMarks(vehicles: Vehicle[], nowMs: number, here: { lat: nu
       stand: !live && !v.fixed && nowMs - v.atMs > VEHICLE_STALE_MS ? `Stand ${clock(v.atMs)}` : null,
     };
   });
+}
+
+/** Ab dieser Zoomstufe steht der Name unter einem Punkt der Lagekarte; weiter draußen bleibt die Karte ruhig. */
+export const LAGEPUNKT_NAME_AB_ZOOM = 12;
+
+export interface LagePunkt {
+  id: string;
+  name: string;
+  /** Data-URI des Zeichens wie bei `VehicleMark`; `null`, wenn die Suite keins kennt. */
+  src: string | null;
+  lat: number;
+  lon: number;
+}
+
+/** Punkte der Lagekarte. Sie zählen nicht für `surroundingBounds`: feste Objekte ziehen die Karte nicht auf. */
+export function lagePunkte(objects: MapObject[]): LagePunkt[] {
+  return objects.flatMap((o) =>
+    o.kind === 'point'
+      ? [{ id: o.id, name: o.name, src: o.symbol === null ? null : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(o.symbol)}`, lat: o.lat, lon: o.lon }]
+      : [],
+  );
+}
+
+/** Flächen der Lagekarte als Polygone; `farbe` ist der Palettenschlüssel (`lageFarbAusdruck`). */
+export function lageFlaechen(objects: MapObject[]): Collection {
+  return {
+    type: 'FeatureCollection',
+    features: objects.flatMap((o) =>
+      o.kind === 'area'
+        ? [{ type: 'Feature' as const, properties: { id: o.id, farbe: o.color }, geometry: { type: 'Polygon', coordinates: [o.ring] } }]
+        : [],
+    ),
+  };
+}
+
+export interface LageBeschriftung {
+  id: string;
+  name: string;
+  farbe: NoticeColor;
+  lat: number;
+  lon: number;
+}
+
+/** Je Fläche ihr Name am Beschriftungspunkt der Suite. Ein Zeichen bekommt eine Fläche nicht. */
+export function lageBeschriftungen(objects: MapObject[]): LageBeschriftung[] {
+  return objects.flatMap((o) => (o.kind === 'area' ? [{ id: o.id, name: o.name, farbe: o.color, lat: o.lat, lon: o.lon }] : []));
 }
 
 /** Bis zu dieser Entfernung zoomt die Karte ohne Einsatz heraus, um Fahrzeuge und feste Orte mit zu zeigen. */

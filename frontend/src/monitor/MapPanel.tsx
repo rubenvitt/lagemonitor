@@ -2,14 +2,28 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Map as MapLibreMap, Marker, type ExpressionSpecification, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
 import '../map/maplibreWorker';
 import { basemapStyle } from '../map/basemapStyle';
+import type { MapObject } from '../contract/MapObject';
 import type { SpeedCamera } from '../contract/SpeedCamera';
 import type { SuchlageView } from '../contract/SuchlageView';
 import type { TrafficIncident } from '../contract/TrafficIncident';
 import type { Vehicle } from '../contract/Vehicle';
 import type { Warning } from '../contract/Warning';
 import { useThemeMode } from '../theme/ThemeModeProvider';
+import { lageFarbAusdruck, lageFarbe } from '../theme/palette';
 import { farbenDunkel, farbenHell } from '../theme/tokens';
-import { incidentFeatures, radarTiles, speedCameraFeatures, surroundingBounds, trafficTiles, vehicleMarks, warningAreas } from './mapData';
+import {
+  LAGEPUNKT_NAME_AB_ZOOM,
+  incidentFeatures,
+  lageBeschriftungen,
+  lageFlaechen,
+  lagePunkte,
+  radarTiles,
+  speedCameraFeatures,
+  surroundingBounds,
+  trafficTiles,
+  vehicleMarks,
+  warningAreas,
+} from './mapData';
 import { aircraftPoints, areas, boundsKey, coloredTracks, coveredByDrone, suchlageBounds } from './suchlageData';
 
 interface Props {
@@ -32,6 +46,8 @@ interface Props {
   speedCameras: SpeedCamera[];
   /** Fahrzeuge und feste Orte aus der Suite; das eigene Fahrzeug steht am GPS-Fix (`lat`/`lon`). Einen Standortpunkt gibt es nicht. */
   vehicles: Vehicle[];
+  /** Feste Objekte der Lagekarte aus der Suite; ziehen die Karte nicht auf. */
+  mapObjects: MapObject[];
   /** Laufender Suchlage-Einsatz; `null` ohne Einsatz oder mit Modul aus. */
   suchlage: SuchlageView | null;
   /** Das Drohnenbild ist eingefahren und verdeckt den rechten Rand. */
@@ -46,6 +62,8 @@ type Data = Parameters<GeoJSONSource['setData']>[0];
 
 /** Kantenlänge eines Fahrzeugzeichens; steht so auch in `monitor.css` (`.lm-fahrzeug img`). */
 const FAHRZEUG_PX = 44;
+/** Kantenlänge eines Zeichens der Lagekarte, etwas kleiner als ein Fahrzeug; steht so auch in `monitor.css` (`.lm-lagepunkt img`). */
+const LAGEPUNKT_PX = 32;
 
 /** Dünne Hülle um maplibre (läuft nicht in jsdom); die Logik steckt in `mapData.ts`. */
 export default function MapPanel({
@@ -61,6 +79,7 @@ export default function MapPanel({
   incidents,
   speedCameras,
   vehicles,
+  mapObjects,
   suchlage,
   droneOpen,
   sideColumn,
@@ -102,6 +121,12 @@ export default function MapPanel({
         source: 'warngebiete',
         paint: { 'line-color': kindColor, 'line-width': 2, 'line-dasharray': [3, 2] },
       });
+      // Flächen der Lagekarte über Radar und Warngebieten, unter Verkehr, Einsatz und Fahrzeugen; fein und
+      // leicht gefüllt, damit sie den Hintergrund nicht zudecken. Die Namen stehen als HTML (Effekt unten).
+      const lageTon = lageFarbAusdruck(effektiv === 'dark');
+      m.addSource('lagekarte', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      m.addLayer({ id: 'lagekarte-flaeche', type: 'fill', source: 'lagekarte', paint: { 'fill-color': lageTon, 'fill-opacity': 0.14 } });
+      m.addLayer({ id: 'lagekarte-kante', type: 'line', source: 'lagekarte', paint: { 'line-color': lageTon, 'line-width': 1.5 } });
       // Baustellen und Blitzer neutral (Text- und Grundfarbe): Rot und Gelb gehören den Warnungen,
       // Blau Suchlage. Eine Baustelle ist eine gestreifte Linie, eine Sperrung breiter.
       m.addSource('baustellen', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -216,6 +241,45 @@ export default function MapPanel({
     map.getSource<GeoJSONSource>('flugspuren')?.setData((suchlage ? coloredTracks(suchlage) : empty) as Data);
     map.getSource<GeoJSONSource>('drohnen')?.setData((suchlage ? aircraftPoints(suchlage.aircraft) : empty) as Data);
   }, [map, suchlage]);
+
+  // Lagekarte: Flächen als Ebene, Namen und Punkte als HTML-Marker. HTML statt Kartenschrift, weil die Glyphen
+  // nur online kommen (`basemapStyle.ts`) und eine Fläche ohne Namen nichts sagt. Neu gesetzt nur, wenn sich
+  // etwas ändert; `map` und das Thema in den Abhängigkeiten, weil eine neu gebaute Karte leer beginnt.
+  const lageKey = JSON.stringify(mapObjects);
+  useEffect(() => {
+    if (!map?.style) return;
+    map.getSource<GeoJSONSource>('lagekarte')?.setData(lageFlaechen(mapObjects) as Data);
+    const namen = lageBeschriftungen(mapObjects).map((b) => {
+      const el = document.createElement('div');
+      el.className = 'lm-lageflaeche';
+      el.style.setProperty('--lm-lage', lageFarbe(b.farbe, dark));
+      el.textContent = b.name;
+      return new Marker({ element: el, anchor: 'center' }).setLngLat([b.lon, b.lat]).addTo(map);
+    });
+    const punkte = lagePunkte(mapObjects).map((p) => {
+      const el = document.createElement('div');
+      el.className = 'lm-lagepunkt';
+      // Ohne Zeichen ein schlichter Punkt.
+      const zeichen = document.createElement(p.src === null ? 'i' : 'img');
+      if (p.src !== null) Object.assign(zeichen, { src: p.src, alt: '' });
+      const name = document.createElement('span');
+      name.textContent = p.name;
+      el.append(zeichen, name);
+      return new Marker({ element: el, anchor: 'top', offset: [0, -LAGEPUNKT_PX / 2] }).setLngLat([p.lon, p.lat]).addTo(map);
+    });
+    // Namen unter den Punkten erst nah dran; als Attribut an der Kartenfläche, `monitor.css` blendet sie ein.
+    const flaeche = map.getContainer();
+    const nah = () => flaeche.toggleAttribute('data-nah', map.getZoom() >= LAGEPUNKT_NAME_AB_ZOOM);
+    nah();
+    map.on('zoom', nah);
+    return () => {
+      map.off('zoom', nah);
+      namen.forEach((m) => m.remove());
+      punkte.forEach((m) => m.remove());
+    };
+    // `mapObjects` steckt in `lageKey`; ein neues Array je Abfrage soll die Marker nicht neu setzen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, lageKey, dark]);
 
   // Fahrzeuge als HTML-Marker (Zeichen als `<img>`, Funkrufname darunter). Neu gesetzt nur, wenn sich etwas
   // Sichtbares ändert; `map` in den Abhängigkeiten, weil eine neu gebaute Karte (Theme, Zoom) leer beginnt.

@@ -2,6 +2,7 @@
 import type { ConfigState } from "./ConfigState";
 import type { Location } from "./Location";
 import type { MapInfo } from "./MapInfo";
+import type { MapObject } from "./MapObject";
 import type { Modules } from "./Modules";
 import type { Notice } from "./Notice";
 import type { Position } from "./Position";
@@ -39,4 +40,8 @@ recruitment: Recruitment | null, traffic: TrafficView,
 /**
  * Fahrzeuge mit einer Position aus den letzten 24 Stunden.
  */
-vehicles: Array<Vehicle>, };
+vehicles: Array<Vehicle>, 
+/**
+ * Feste Objekte der Lagekarte, Flächen vor Punkten.
+ */
+mapObjects: Array<MapObject>, };
