@@ -196,6 +196,60 @@
   font-weight: 600;
   white-space: nowrap;
 }
+/* ── Lagekarte ────────────────────────────────────────────────────────────
+   Feste Objekte aus der Suite: unter den Fahrzeugen, Punkte kleiner als ein Fahrzeug, ihr Name erst nah dran
+   (`data-nah`, `LAGEPUNKT_NAME_AB_ZOOM`). Eine Fläche trägt nur ihren Namen in ihrer Farbe (`--lm-lage`). */
+.lm-fahrzeug {
+  z-index: 1;
+}
+.lm-lagepunkt,
+.lm-lageflaeche {
+  z-index: 0;
+  pointer-events: none;
+}
+.lm-lagepunkt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.lm-lagepunkt img {
+  width: 32px;
+  height: 32px;
+}
+.lm-lagepunkt i {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin: 9px;
+  border-radius: 50%;
+  background: var(--lfh-flaeche);
+  border: 3px solid var(--lfh-text);
+}
+.lm-lagepunkt span {
+  display: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--lfh-flaeche);
+  color: var(--lfh-text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+[data-nah] .lm-lagepunkt span {
+  display: block;
+}
+.lm-lageflaeche {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lfh-flaeche) 80%, transparent);
+  color: var(--lm-lage);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 /* Am Zeichen, nicht am Marker: maplibre setzt `opacity` am Marker-Element selbst (inline). */
 .lm-fahrzeug[data-veraltet] img {
   filter: grayscale(1);

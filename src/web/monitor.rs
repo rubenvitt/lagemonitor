@@ -191,5 +191,6 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
             .into_iter()
             .filter(|v| v.fixed || now_ms - v.at_ms <= VEHICLE_HIDDEN_MS)
             .collect(),
+        map_objects: cfg.map_objects,
     }))
 }

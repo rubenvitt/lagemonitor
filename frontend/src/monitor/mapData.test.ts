@@ -1,4 +1,5 @@
-import { RADAR_MAX_AGE_MS, TRAFFIC_TILE_MS, VEHICLE_STALE_MS, incidentFeatures, radarAt, speedCameraFeatures, surroundingBounds, trafficTiles, vehicleMarks, warningAreas, type VehicleMark } from './mapData';
+import type { MapObject } from '../contract/MapObject';
+import { RADAR_MAX_AGE_MS, TRAFFIC_TILE_MS, VEHICLE_STALE_MS, incidentFeatures, lageBeschriftungen, lageFlaechen, lagePunkte, radarAt, speedCameraFeatures, surroundingBounds, trafficTiles, vehicleMarks, warningAreas, type VehicleMark } from './mapData';
 import { NOW, makeView, makeWarning } from './testViews';
 
 const square = {
@@ -78,4 +79,46 @@ test('Der Rahmen um den eigenen Standort fasst frische Zeichen bis 50 km, mit de
   expect(surroundingBounds([mark(52.97, 10.56), mark(53.07, 10.6)], here)).toEqual([[10.52, 52.87], [10.6, 53.07]]);
   // Veraltet oder weiter als 50 km: zählt nicht.
   expect(surroundingBounds([mark(53.07, 10.6, 'Stand 07:00'), mark(53.6, 10.56)], here)).toBeNull();
+});
+
+const lagekarte: MapObject[] = [
+  {
+    kind: 'area',
+    id: 'lk-def456',
+    name: 'Abschnitt Süd',
+    color: 'teal',
+    ring: [[10.5, 52.9], [10.6, 52.9], [10.6, 52.95], [10.5, 52.9]],
+    lat: 52.92,
+    lon: 10.56,
+  },
+  { kind: 'point', id: 'lk-abc123', name: 'Bereitstellungsraum Nord', symbol: '<svg xmlns="http://www.w3.org/2000/svg"/>', lat: 52.96, lon: 10.57 },
+  { kind: 'point', id: 'lk-ohne', name: 'Wache', symbol: null, lat: 52.97, lon: 10.55 },
+];
+
+test('Flächen der Lagekarte werden Polygone mit Palettenschlüssel, ohne Punkte', () => {
+  expect(lageFlaechen(lagekarte).features).toEqual([
+    {
+      type: 'Feature',
+      properties: { id: 'lk-def456', farbe: 'teal' },
+      geometry: { type: 'Polygon', coordinates: [[[10.5, 52.9], [10.6, 52.9], [10.6, 52.95], [10.5, 52.9]]] },
+    },
+  ]);
+});
+
+test('Eine Fläche bekommt ihren Namen am Beschriftungspunkt, kein Zeichen', () => {
+  expect(lageBeschriftungen(lagekarte)).toEqual([{ id: 'lk-def456', name: 'Abschnitt Süd', farbe: 'teal', lat: 52.92, lon: 10.56 }]);
+});
+
+test('Punkte der Lagekarte tragen ihr Zeichen als Data-URI, ohne Zeichen null', () => {
+  const [p, ohne, ...rest] = lagePunkte(lagekarte);
+  expect(rest).toEqual([]);
+  expect(p).toEqual({
+    id: 'lk-abc123',
+    name: 'Bereitstellungsraum Nord',
+    src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"/>')}`,
+    lat: 52.96,
+    lon: 10.57,
+  });
+  expect(ohne.src).toBeNull();
+  expect(lagePunkte([])).toEqual([]);
 });

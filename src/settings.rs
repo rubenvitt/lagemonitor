@@ -4,7 +4,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::contract::{Location, Modules, Notice, Recruitment, Region, Severity, Vehicle};
+use crate::contract::{
+    Location, MapObject, Modules, Notice, Recruitment, Region, Severity, Vehicle,
+};
 use crate::error::AppError;
 
 /// Verbindung zu Suchlage: Adresse und Großbild-Token, dazu, was vom Einsatz erscheint.
@@ -69,6 +71,8 @@ pub struct Settings {
     pub map_zoom: f64,
     /// Fahrzeuge mit ihrer letzten Position, Stand der letzten Abholung.
     pub vehicles: Vec<Vehicle>,
+    /// Feste Objekte der Lagekarte, Stand der letzten Abholung.
+    pub map_objects: Vec<MapObject>,
 }
 
 pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
@@ -93,6 +97,7 @@ pub async fn load(pool: &SqlitePool) -> Result<Settings, AppError> {
         traffic: get(pool, "traffic").await?.unwrap_or_default(),
         map_zoom: get(pool, "map_zoom").await?.unwrap_or(MAP_ZOOM_DEFAULT),
         vehicles: get(pool, "vehicles").await?.unwrap_or_default(),
+        map_objects: get(pool, "map_objects").await?.unwrap_or_default(),
     })
 }
 
@@ -110,6 +115,7 @@ pub async fn save(pool: &SqlitePool, s: &Settings) -> Result<(), AppError> {
         ("traffic", to_json(&s.traffic)?),
         ("map_zoom", to_json(&s.map_zoom)?),
         ("vehicles", to_json(&s.vehicles)?),
+        ("map_objects", to_json(&s.map_objects)?),
     ];
     let mut tx = pool.begin().await?;
     for (key, value) in rows {
@@ -167,6 +173,7 @@ mod tests {
         assert_eq!(s.traffic, TrafficLink::default());
         assert_eq!(s.map_zoom, MAP_ZOOM_DEFAULT);
         assert!(s.vehicles.is_empty());
+        assert!(s.map_objects.is_empty());
     }
 
     #[tokio::test]
@@ -214,6 +221,23 @@ mod tests {
             speed_cameras: true,
         };
         s.map_zoom = 11.5;
+        s.map_objects = vec![
+            MapObject::Area {
+                id: "lk-a".into(),
+                name: "Abschnitt Süd".into(),
+                color: NoticeColor::Teal,
+                ring: vec![[10.5, 52.9], [10.6, 52.9], [10.6, 52.95], [10.5, 52.9]],
+                lat: 52.92,
+                lon: 10.56,
+            },
+            MapObject::Point {
+                id: "lk-p".into(),
+                name: "Bereitstellungsraum Nord".into(),
+                symbol: None,
+                lat: 52.96,
+                lon: 10.57,
+            },
+        ];
         save(&pool, &s).await.unwrap();
         assert_eq!(load(&pool).await.unwrap(), s);
         s.suchlage = None;

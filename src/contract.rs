@@ -341,6 +341,35 @@ pub struct Vehicle {
     pub fixed: bool,
 }
 
+/// Ein festes Objekt der Lagekarte aus der IUK-Suite (IDA-348), gleich für alle Monitore. Zieht die
+/// Karte nicht auf: Der Ausschnitt richtet sich nach Standort, Fahrzeugen und Einsatz.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export, export_to = "../frontend/src/contract/")]
+pub enum MapObject {
+    /// Ein Ort mit taktischem Zeichen, etwa eine Wache oder ein Bereitstellungsraum.
+    Point {
+        id: String,
+        name: String,
+        /// Taktisches Zeichen als eigenständiges SVG-Dokument wie bei `Vehicle`; `null`, wenn die Suite
+        /// keins kennt.
+        symbol: Option<String>,
+        lat: f64,
+        lon: f64,
+    },
+    /// Ein Vieleck mit dem Namen als Beschriftung, ohne Zeichen.
+    Area {
+        id: String,
+        name: String,
+        color: NoticeColor,
+        /// `[lon, lat]` wie in GeoJSON, geschlossen (erster Punkt gleich letzter).
+        ring: Vec<[f64; 2]>,
+        /// Wo die Beschriftung steht (Schwerpunkt, von der Suite berechnet).
+        lat: f64,
+        lon: f64,
+    },
+}
+
 /// QR-Code fürs Ehrenamt: wohin er führt und der Satz daneben. Nur `https://`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -430,6 +459,8 @@ pub struct MonitorView {
     pub traffic: TrafficView,
     /// Fahrzeuge mit einer Position aus den letzten 24 Stunden.
     pub vehicles: Vec<Vehicle>,
+    /// Feste Objekte der Lagekarte, Flächen vor Punkten.
+    pub map_objects: Vec<MapObject>,
 }
 
 #[cfg(test)]
