@@ -35,7 +35,8 @@ pub const SUCHLAGE_IDLE_EVERY_MS: i64 = 30_000;
 pub const SUCHLAGE_MAP_EVERY_MS: i64 = 30_000;
 /// Takt, in dem nachgesehen wird, ob ein Verkehrs-Stand fällig ist; abgefragt wird viel seltener.
 pub const TRAFFIC_TICK: Duration = Duration::from_secs(60);
-/// Störungen stündlich: 2 Instanzen × 24 × 31 = 1.488 von 2.500 Abfragen im Monat (`sources::tomtom`).
+/// Störungen stündlich: 2 Instanzen × 24 × 31 = 1.488 von 2.500 Abfragen im Monat (`sources::tomtom`);
+/// fahrend höchstens vier je Stunde dazu (`TRAFFIC_REQUERY_KM`).
 pub const INCIDENTS_INTERVAL_MS: i64 = 60 * 60_000;
 /// Feste Blitzer ändern sich selten.
 pub const SPEED_CAMERA_INTERVAL_MS: i64 = 24 * 60 * 60_000;
@@ -77,10 +78,7 @@ pub async fn weather_key_near(state: &AppState, location: &Location) -> String {
     let near = |source: &str| {
         let (lat, lon) = source.strip_prefix("weather:")?.split_once(',')?;
         let (lat, lon): (f64, f64) = (lat.parse().ok()?, lon.parse().ok()?);
-        // Flache Näherung genügt auf diese Entfernung.
-        let dy = (lat - location.lat) * 111.2;
-        let dx = (lon - location.lon) * 111.2 * location.lat.to_radians().cos();
-        Some(dx.hypot(dy) <= WEATHER_NEAR_KM)
+        Some(distance_km(lat, lon, location) <= WEATHER_NEAR_KM)
     };
     rows.into_iter()
         .find(|(source, _)| near(source) == Some(true))
@@ -109,9 +107,21 @@ pub async fn location(state: &AppState, cfg: &settings::Settings) -> Location {
     }
 }
 
-/// Rastermaß für den Ort der Verkehrsabfragen, rund 5 km: Fährt das Fahrzeug, kommt mit jeder Abholung ein neuer
-/// Ort aus der Suite; neu abgefragt wird erst, wenn es eine Rasterzelle weiter ist (TomTom zählt jede Abfrage).
+/// Rastermaß für den Ort einer neuen Verkehrsabfrage, rund 5 km: So zittert der Schlüssel nicht mit
+/// dem GPS, und ein Fahrzeug, das an der Wache steht, fragt immer unter demselben Schlüssel.
 const TRAFFIC_GRID_DEG: f64 = 0.05;
+
+/// Erst wenn der jüngste Stand weiter als das vom Fahrzeug weg ist, wird neu abgefragt (LGM-11). Das
+/// Gebiet einer Abfrage reicht 49,5 km in jede Richtung (`tomtom::bbox`): Es bleiben immer gut 24 km
+/// Vorlauf, und bei 100 km/h kommen höchstens vier Abfragen je Fahrstunde dazu (TomTom zählt jede).
+const TRAFFIC_REQUERY_KM: f64 = 25.0;
+/// So weit darf der angezeigte Stand weg sein: bis kurz vor den Rand seines Gebiets. Weiter weg
+/// gilt der eigene Rasterpunkt, bis zu dem es noch keinen Stand gibt.
+const TRAFFIC_SHOWN_KM: f64 = 40.0;
+
+/// Präfixe der Stände; dahinter steht der Mittelpunkt der Abfrage (`incidents_key`).
+pub const INCIDENTS_PREFIX: &str = "tomtom:";
+pub const SPEED_CAMERAS_PREFIX: &str = "blitzer:";
 
 /// Der Ort, um den Baustellen und Blitzer abgefragt werden: `location` auf das Raster gerückt.
 pub fn traffic_location(location: &Location) -> Location {
@@ -124,28 +134,103 @@ pub fn traffic_location(location: &Location) -> Location {
 }
 
 pub fn incidents_key(location: &Location) -> String {
-    format!("tomtom:{:.4},{:.4}", location.lat, location.lon)
+    format!("{INCIDENTS_PREFIX}{:.4},{:.4}", location.lat, location.lon)
 }
 
 pub fn speed_cameras_key(location: &Location) -> String {
-    format!("blitzer:{:.4},{:.4}", location.lat, location.lon)
+    format!(
+        "{SPEED_CAMERAS_PREFIX}{:.4},{:.4}",
+        location.lat, location.lon
+    )
 }
 
-/// Fällig, wenn der Stand älter als `interval_ms` ist (oder fehlt) und der letzte Versuch länger als
-/// `TRAFFIC_RETRY_MS` her. Der Stand liegt in `snapshots`: Ein Neustart fragt nicht neu.
-pub async fn traffic_due(state: &AppState, key: &str, interval_ms: i64, now_ms: i64) -> bool {
-    let fresh = store::fetched_at(&state.pool, key)
+/// Flache Näherung, genügt auf diese Entfernungen.
+fn distance_km(lat: f64, lon: f64, location: &Location) -> f64 {
+    let dy = (lat - location.lat) * 111.2;
+    let dx = (lon - location.lon) * 111.2 * location.lat.to_radians().cos();
+    dx.hypot(dy)
+}
+
+/// Der jüngste Stand mit `prefix`, dessen Abfrage höchstens `max_km` vom Ort entfernt war, samt
+/// Zeitpunkt. Ältere Stände in der Nähe zählen nicht: Der jüngste ist der, der zuletzt passte.
+// shortcut: alte Zeilen bleiben liegen (eine je Abfragepunkt); aufräumen, wenn die Tabelle stört.
+async fn traffic_near(
+    state: &AppState,
+    prefix: &str,
+    location: &Location,
+    max_km: f64,
+) -> Option<(String, i64)> {
+    let near = |source: &str| {
+        let (lat, lon) = source.strip_prefix(prefix)?.split_once(',')?;
+        let (lat, lon): (f64, f64) = (lat.parse().ok()?, lon.parse().ok()?);
+        Some(distance_km(lat, lon, location) <= max_km)
+    };
+    store::sources_with_prefix(&state.pool, prefix)
         .await
-        .is_some_and(|at| now_ms - at < interval_ms);
+        .into_iter()
+        .find(|(source, _)| near(source) == Some(true))
+}
+
+/// Schlüssel des Verkehrsstands für die Anzeige: derselbe, den `traffic_due` frisch hält, bis der
+/// nächste da ist ein weiter entfernter, sonst der eigene Rasterpunkt. Beim Fahren springt die
+/// Anzeige so nicht mit jeder Rasterzelle ins Leere.
+pub async fn traffic_key_shown(state: &AppState, prefix: &str, location: &Location) -> String {
+    let near = match traffic_near(state, prefix, location, TRAFFIC_REQUERY_KM).await {
+        Some(found) => Some(found),
+        None => traffic_near(state, prefix, location, TRAFFIC_SHOWN_KM).await,
+    };
+    match near {
+        Some((key, _)) => key,
+        None => {
+            let at = traffic_location(location);
+            format!("{prefix}{:.4},{:.4}", at.lat, at.lon)
+        }
+    }
+}
+
+/// Der Fehler des letzten Versuchs dieser Ebene, gleich unter welchem Ort. Die Anzeige kann einen
+/// älteren Stand von anderswo zeigen (`traffic_key_shown`); der Fehler gehört trotzdem dazu.
+pub async fn traffic_error(state: &AppState, prefix: &str) -> Option<String> {
+    let errors = state.errors.read().await;
+    errors
+        .iter()
+        .find(|(key, _)| key.starts_with(prefix))
+        .map(|(_, e)| e.clone())
+}
+
+/// Ein neuer Versuch ersetzt den Fehler des vorigen, auch wenn der an einem anderen Ort war.
+async fn clear_traffic_errors(state: &AppState, prefix: &str) {
+    state
+        .errors
+        .write()
+        .await
+        .retain(|key, _| !key.starts_with(prefix));
+}
+
+/// Der Schlüssel, unter dem jetzt abgefragt werden soll, oder `None`. Fällig, wenn es in
+/// `TRAFFIC_REQUERY_KM` keinen Stand jünger als `interval_ms` gibt und der letzte Versuch dieser
+/// Ebene länger als `TRAFFIC_RETRY_MS` her ist. Der Versuch zählt je Ebene, nicht je Ort: Ein
+/// fahrendes Fahrzeug fragt nach einem Fehlschlag nicht in jeder neuen Rasterzelle gleich wieder.
+/// Der Stand liegt in `snapshots`: Ein Neustart fragt nicht neu.
+pub async fn traffic_due(
+    state: &AppState,
+    prefix: &str,
+    location: &Location,
+    interval_ms: i64,
+    now_ms: i64,
+) -> Option<Location> {
+    let fresh = traffic_near(state, prefix, location, TRAFFIC_REQUERY_KM)
+        .await
+        .is_some_and(|(_, at)| now_ms - at < interval_ms);
     let mut attempts = state.traffic_attempts.lock().await;
     let recently_tried = attempts
-        .get(key)
+        .get(prefix)
         .is_some_and(|&at| now_ms - at < TRAFFIC_RETRY_MS);
     if fresh || recently_tried {
-        return false;
+        return None;
     }
-    attempts.insert(key.to_string(), now_ms);
-    true
+    attempts.insert(prefix.to_string(), now_ms);
+    Some(traffic_location(location))
 }
 
 /// Ein Abruf. Erfolg speichert den Stand und löscht den Fehler; Fehler lässt den alten Stand stehen.
@@ -297,20 +382,31 @@ pub async fn poll_traffic(
     let Some(cfg) = load_settings(state).await else {
         return;
     };
+    // Der eigene GPS-Fix wie beim Wetter: Er ist sofort da, der Ort aus der Suite erst nach einer
+    // Runde über deren Abholung.
+    let here = location(state, &cfg).await;
     if let Some(key) = cfg.traffic.key_for(cfg.traffic.incidents) {
-        let loc = traffic_location(&cfg.location);
-        let k = incidents_key(&loc);
-        if traffic_due(state, &k, INCIDENTS_INTERVAL_MS, now).await {
-            let (http, base, key, loc) = (http.clone(), tomtom_base.clone(), key.to_string(), loc);
+        let due = traffic_due(state, INCIDENTS_PREFIX, &here, INCIDENTS_INTERVAL_MS, now).await;
+        if let Some(loc) = due {
+            let k = incidents_key(&loc);
+            clear_traffic_errors(state, INCIDENTS_PREFIX).await;
+            let (http, base, key) = (http.clone(), tomtom_base.clone(), key.to_string());
             let fetcher =
                 move || async move { tomtom::fetch_incidents(&http, &base, &key, &loc).await };
             run_once(state, &k, fetcher, now_ms).await;
         }
     }
     if cfg.traffic.speed_cameras && state.boot.online() {
-        let loc = traffic_location(&cfg.location);
-        let k = speed_cameras_key(&loc);
-        if traffic_due(state, &k, SPEED_CAMERA_INTERVAL_MS, now).await {
+        let due = traffic_due(
+            state,
+            SPEED_CAMERAS_PREFIX,
+            &here,
+            SPEED_CAMERA_INTERVAL_MS,
+            now,
+        );
+        if let Some(loc) = due.await {
+            let k = speed_cameras_key(&loc);
+            clear_traffic_errors(state, SPEED_CAMERAS_PREFIX).await;
             let (http, base) = (http.clone(), overpass.clone());
             let fetcher = move || async move { osm::fetch(&http, &base, &loc).await };
             run_once(state, &k, fetcher, now_ms).await;
@@ -761,26 +857,110 @@ mod tests {
         AppState::new(crate::db::test_pool().await, std::sync::Arc::new(boot)).await
     }
 
+    fn at(lat: f64, lon: f64) -> Location {
+        Location {
+            lat,
+            lon,
+            label: "x".into(),
+        }
+    }
+
     #[tokio::test]
     async fn traffic_is_due_rarely() {
         let s = state().await;
         let hour = INCIDENTS_INTERVAL_MS;
-        assert!(
-            traffic_due(&s, "tomtom:x", hour, 1_000_000).await,
+        let here = at(52.9656, 10.5594);
+        let due = |now| traffic_due(&s, INCIDENTS_PREFIX, &here, hour, now);
+        assert_eq!(
+            due(1_000_000).await.map(|l| incidents_key(&l)).as_deref(),
+            Some("tomtom:52.9500,10.5500"),
             "noch nie gefragt"
         );
-        assert!(
-            !traffic_due(&s, "tomtom:x", hour, 1_060_000).await,
+        assert_eq!(
+            due(1_060_000).await,
+            None,
             "gescheitert: erst nach 15 min wieder"
         );
-        assert!(traffic_due(&s, "tomtom:x", hour, 1_000_000 + TRAFFIC_RETRY_MS).await);
-        store::save(&s.pool, "tomtom:x", 2_000_000, &())
+        assert!(due(1_000_000 + TRAFFIC_RETRY_MS).await.is_some());
+        store::save(&s.pool, &incidents_key(&at(52.95, 10.55)), 2_000_000, &())
             .await
             .unwrap();
-        assert!(
-            !traffic_due(&s, "tomtom:x", hour, 2_000_000 + TRAFFIC_RETRY_MS).await,
+        assert_eq!(
+            due(2_000_000 + TRAFFIC_RETRY_MS).await,
+            None,
             "Stand frisch"
         );
-        assert!(traffic_due(&s, "tomtom:x", hour, 2_000_000 + hour).await);
+        assert!(due(2_000_000 + hour).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_moving_vehicle_asks_again_only_far_from_the_last_query() {
+        let s = state().await;
+        let hour = INCIDENTS_INTERVAL_MS;
+        let (now, later) = (10_000_000, 10_000_000 + TRAFFIC_RETRY_MS);
+        let home = at(52.9656, 10.5594);
+        store::save(&s.pool, &incidents_key(&traffic_location(&home)), now, &1)
+            .await
+            .unwrap();
+        // Gut 20 km nördlich (über vier Rasterzellen): Der Stand von zu Hause reicht noch.
+        let north_20 = at(53.15, 10.5594);
+        assert_eq!(
+            traffic_due(&s, INCIDENTS_PREFIX, &north_20, hour, later).await,
+            None
+        );
+        assert_eq!(
+            traffic_key_shown(&s, INCIDENTS_PREFIX, &north_20).await,
+            "tomtom:52.9500,10.5500"
+        );
+        // Gut 30 km: neu, am eigenen Rasterpunkt.
+        let north_30 = at(53.25, 10.5594);
+        let asked = traffic_due(&s, INCIDENTS_PREFIX, &north_30, hour, later)
+            .await
+            .expect("fällig");
+        assert_eq!(incidents_key(&asked), "tomtom:53.2500,10.5500");
+        // Bis der neue Stand da ist, zeigt die Anzeige noch den von zu Hause.
+        assert_eq!(
+            traffic_key_shown(&s, INCIDENTS_PREFIX, &north_30).await,
+            "tomtom:52.9500,10.5500"
+        );
+        store::save(&s.pool, &incidents_key(&asked), later, &2)
+            .await
+            .unwrap();
+        assert_eq!(
+            traffic_key_shown(&s, INCIDENTS_PREFIX, &north_30).await,
+            "tomtom:53.2500,10.5500"
+        );
+        // Zurück zu Hause gilt wieder der Stand von dort, solange er frisch ist.
+        assert_eq!(
+            traffic_key_shown(&s, INCIDENTS_PREFIX, &home).await,
+            "tomtom:52.9500,10.5500"
+        );
+        assert_eq!(
+            traffic_due(&s, INCIDENTS_PREFIX, &home, hour, later + TRAFFIC_RETRY_MS).await,
+            None
+        );
+        // Weit weg gibt es nichts zu zeigen außer dem eigenen Rasterpunkt.
+        assert_eq!(
+            traffic_key_shown(&s, INCIDENTS_PREFIX, &at(54.0, 10.5594)).await,
+            "tomtom:54.0000,10.5500"
+        );
+        // Ein Fehler am neuen Ort gehört zum angezeigten Stand von anderswo; der nächste Versuch löst ihn ab.
+        s.errors
+            .write()
+            .await
+            .insert("tomtom:54.0000,10.5500".into(), "kaputt".into());
+        assert_eq!(
+            traffic_error(&s, INCIDENTS_PREFIX).await.as_deref(),
+            Some("kaputt")
+        );
+        assert_eq!(traffic_error(&s, SPEED_CAMERAS_PREFIX).await, None);
+        clear_traffic_errors(&s, INCIDENTS_PREFIX).await;
+        assert_eq!(traffic_error(&s, INCIDENTS_PREFIX).await, None);
+        // Andere Ebene, eigener Versuch.
+        assert!(
+            traffic_due(&s, SPEED_CAMERAS_PREFIX, &home, hour, later)
+                .await
+                .is_some()
+        );
     }
 }
