@@ -158,13 +158,85 @@ jobs:
           grep -qx linux/arm64 /tmp/platforms
           echo "digest=$(jq -r .digest /tmp/index.json)" >> "$GITHUB_OUTPUT"
 
+  # Delta-Paket für den FüKw (IDA-332): Patches der geänderten Ebenen gegen den zuletzt erfolgreich
+  # deployten Stand, statt ~3,6 MB nur einige 100 KB über den Uplink. Scheitert dieser Job oder ist kein
+  # Delta sinnvoll, deployt `deploy` ohne; der Server zieht dann wie bisher das ganze Image.
+  # Format und Gegenstück: deploy-delta in rubenvitt/fuekw-deploy.
+  delta:
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ref: ${{ steps.push.outputs.ref }}
+    permissions:
+      contents: read
+      packages: write
+      deployments: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Basis = zuletzt erfolgreich deployter Stand
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          api="repos/$GITHUB_REPOSITORY/deployments"
+          for row in $(gh api "$api?environment=production&task=deploy-compose&per_page=30" \
+                         --jq '.[] | "\(.id)|\(.payload.image // "")"'); do
+            state=$(gh api "$api/${row%%|*}/statuses?per_page=1" --jq '.[0].state // ""')
+            if [ "$state" = success ]; then
+              echo "image=${row#*|}" | tee -a "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "Kein erfolgreiches Deployment gefunden, kein Delta"
+      - name: Delta erzeugen
+        id: delta
+        if: steps.base.outputs.image != ''
+        env:
+          BASE: ${{ steps.base.outputs.image }}
+          TARGET: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.image.outputs.digest }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rc=0
+          scripts/image-delta.sh "$BASE" "$TARGET" linux/amd64 "$RUNNER_TEMP/delta" || rc=$?
+          case $rc in
+            0) echo "made=true" >> "$GITHUB_OUTPUT" ;;
+            3) ;;
+            *) exit "$rc" ;;
+          esac
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.delta.outputs.made == 'true'
+      - name: Log in to ghcr.io
+        if: steps.delta.outputs.made == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Kleines Image FROM scratch mit /delta/; der Server holt es per docker pull (gleicher Zugang).
+      - name: Delta-Paket pushen
+        id: push
+        if: steps.delta.outputs.made == 'true'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          printf 'FROM scratch\nCOPY . /delta/\n' > "$RUNNER_TEMP/Dockerfile.delta"
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+            -f "$RUNNER_TEMP/Dockerfile.delta" --metadata-file "$RUNNER_TEMP/delta-meta.json" \
+            --output "type=image,name=$IMAGE:delta-sha-${GITHUB_SHA::7},push=true,oci-mediatypes=true,compression=zstd,compression-level=19" \
+            "$RUNNER_TEMP/delta"
+          echo "ref=$IMAGE@$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/delta-meta.json")" | tee -a "$GITHUB_OUTPUT"
+
   # fuekw-server holt das Deployment selbst ab (Poller, kein eingehender Zugang nötig).
   # Server-Seite und Einrichtung: rubenvitt/fuekw-deploy
   # Die Cloud-Instanz auf iuk-services braucht hier nichts: Sie folgt `:latest` mit einem eigenen
   # Poller am Server (deploy/cloud/README.md).
   deploy:
-    needs: image
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [image, delta]
+    # Auch ohne Delta: Ein gescheiterter Delta-Job hält das Deployment nicht auf.
+    if: ${{ !cancelled() && needs.image.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -177,15 +249,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DIGEST: ${{ needs.image.outputs.digest }}
+          DELTA: ${{ needs.delta.outputs.ref }}
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           [ -n "$DIGEST" ] || { echo "::error::Image-Job hat keinen Digest geliefert"; exit 1; }
           api="repos/$GITHUB_REPOSITORY/deployments"
-          id=$(jq -n --arg ref "$GITHUB_SHA" --arg image "$IMAGE@$DIGEST" \
+          # payload.delta liest erst der neue Poller; ein älterer übergeht es und zieht ganz.
+          id=$(jq -n --arg ref "$GITHUB_SHA" --arg image "$IMAGE@$DIGEST" --arg delta "$DELTA" \
                  '{ref: $ref, environment: "production", task: "deploy-compose", auto_merge: false,
-                   required_contexts: [], payload: {image: $image}, description: "lagemonitor auf fuekw-server"}' \
+                   required_contexts: [], payload: ({image: $image} + if $delta == "" then {} else {delta: $delta} end),
+                   description: "lagemonitor auf fuekw-server"}' \
                | gh api "$api" --input - --jq .id)
-          echo "Deployment $id: $IMAGE@$DIGEST"
+          echo "Deployment $id: $IMAGE@$DIGEST${DELTA:+ (Delta $DELTA)}"
           last=""
           for _ in $(seq 60); do
             status=$(gh api "$api/$id/statuses?per_page=1" --jq '.[0] | "\(.state // "pending") \(.description // "")"') \
