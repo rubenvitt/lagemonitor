@@ -83,7 +83,7 @@ EOF
 
 `ExecStartPre` wartet, bis der Lagemonitor antwortet. So zeigt der Bildschirm nach dem Booten nie die Fehlerseite des Browsers, sondern bleibt schwarz, bis der Lagemonitor bereit ist. `TimeoutStartSec=infinity` erlaubt dieses Warten beliebig lange.
 
-Die Schalter ab `--disable-background-networking` halten Chromium vom Netz fern, solange es nur die lokale Seite zeigt. Ohne sie liefen im FüKw rund 14 MB pro Stunde an TCP vorbei, und als einziger Prozess sprach Chromium per QUIC mit Google; das war mehr als alles andere auf dem Server zusammen (LGM-12). `--disable-quic` lässt den Rest über TCP laufen, so taucht er in einer Messung mit `ss` auf.
+Die Schalter ab `--disable-background-networking` halten Chromium vom Netz fern, solange es nur die lokale Seite zeigt. Ohne sie sprach Chromium als einziger Prozess im FüKw per QUIC mit Google (LGM-12). `--disable-quic` lässt den Rest über TCP laufen, so taucht er in einer Messung mit `ss` auf. Die rund 13 MB pro Stunde, die eine Messung mit `ss` nicht zuordnen kann, kommen nicht von Chromium; sie blieben nach den Schaltern gleich.
 
 `--incognito` sorgt dafür, dass nach einem Stromausfall kein Hinweis „Seiten wiederherstellen?“ erscheint. Stürzt Chromium ab, startet systemd ihn nach 5 Sekunden neu.
 
