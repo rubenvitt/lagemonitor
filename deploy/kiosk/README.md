@@ -64,7 +64,7 @@ PAMName=lagemonitor-kiosk
 EnvironmentFile=/etc/default/lagemonitor-kiosk
 ExecStartPre=/bin/sh -c 'until curl -sf http://127.0.0.1:8080/api/health >/dev/null; do sleep 2; done'
 TimeoutStartSec=infinity
-ExecStart=/usr/bin/cage -- /snap/bin/chromium --kiosk --incognito --no-first-run --noerrdialogs --disable-infobars --disable-translate --ozone-platform=wayland --check-for-update-interval=31536000 ${KIOSK_URL}
+ExecStart=/usr/bin/cage -- /snap/bin/chromium --kiosk --incognito --no-first-run --noerrdialogs --disable-infobars --disable-translate --ozone-platform=wayland --check-for-update-interval=31536000 --disable-background-networking --disable-component-update --disable-domain-reliability --disable-sync --no-pings --disable-quic --disable-features=OptimizationGuideModelDownloading,OptimizationHintsFetching,MediaRouter ${KIOSK_URL}
 Restart=always
 RestartSec=5
 UtmpIdentifier=tty1
@@ -82,6 +82,8 @@ EOF
 ```
 
 `ExecStartPre` wartet, bis der Lagemonitor antwortet. So zeigt der Bildschirm nach dem Booten nie die Fehlerseite des Browsers, sondern bleibt schwarz, bis der Lagemonitor bereit ist. `TimeoutStartSec=infinity` erlaubt dieses Warten beliebig lange.
+
+Die Schalter ab `--disable-background-networking` halten Chromium vom Netz fern, solange es nur die lokale Seite zeigt. Ohne sie liefen im FüKw rund 14 MB pro Stunde an TCP vorbei, und als einziger Prozess sprach Chromium per QUIC mit Google; das war mehr als alles andere auf dem Server zusammen (LGM-12). `--disable-quic` lässt den Rest über TCP laufen, so taucht er in einer Messung mit `ss` auf.
 
 `--incognito` sorgt dafür, dass nach einem Stromausfall kein Hinweis „Seiten wiederherstellen?“ erscheint. Stürzt Chromium ab, startet systemd ihn nach 5 Sekunden neu.
 
