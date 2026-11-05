@@ -88,6 +88,21 @@ async fn suchlage(
     })
 }
 
+/// Eine Verkehrsebene: der Stand in der Nähe, der Fehler des letzten Versuchs, wo auch immer der war.
+async fn traffic_layer<T: DeserializeOwned>(
+    state: &AppState,
+    prefix: &str,
+    location: &Location,
+    max_age_ms: i64,
+    now_ms: i64,
+) -> Sourced<T> {
+    let key = poller::traffic_key_shown(state, prefix, location).await;
+    Sourced {
+        error: poller::traffic_error(state, prefix).await,
+        ..sourced(state, &key, max_age_ms, now_ms).await
+    }
+}
+
 /// Ebenen ohne Schlüssel oder ausgeschaltet kommen als `false`/`null`; Blitzer nur online.
 async fn traffic(
     state: &AppState,
@@ -98,9 +113,10 @@ async fn traffic(
     let t = &cfg.traffic;
     let incidents = match t.key_for(t.incidents) {
         Some(_) => Some(
-            sourced::<Vec<TrafficIncident>>(
+            traffic_layer::<Vec<TrafficIncident>>(
                 state,
-                &poller::traffic_key_shown(state, poller::INCIDENTS_PREFIX, location).await,
+                poller::INCIDENTS_PREFIX,
+                location,
                 INCIDENTS_STALE_MS,
                 now_ms,
             )
@@ -110,9 +126,10 @@ async fn traffic(
     };
     let speed_cameras = if t.speed_cameras && state.boot.online() {
         Some(
-            sourced::<Vec<SpeedCamera>>(
+            traffic_layer::<Vec<SpeedCamera>>(
                 state,
-                &poller::traffic_key_shown(state, poller::SPEED_CAMERAS_PREFIX, location).await,
+                poller::SPEED_CAMERAS_PREFIX,
+                location,
                 SPEED_CAMERA_STALE_MS,
                 now_ms,
             )

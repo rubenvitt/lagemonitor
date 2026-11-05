@@ -188,6 +188,25 @@ pub async fn traffic_key_shown(state: &AppState, prefix: &str, location: &Locati
     }
 }
 
+/// Der Fehler des letzten Versuchs dieser Ebene, gleich unter welchem Ort. Die Anzeige kann einen
+/// älteren Stand von anderswo zeigen (`traffic_key_shown`); der Fehler gehört trotzdem dazu.
+pub async fn traffic_error(state: &AppState, prefix: &str) -> Option<String> {
+    let errors = state.errors.read().await;
+    errors
+        .iter()
+        .find(|(key, _)| key.starts_with(prefix))
+        .map(|(_, e)| e.clone())
+}
+
+/// Ein neuer Versuch ersetzt den Fehler des vorigen, auch wenn der an einem anderen Ort war.
+async fn clear_traffic_errors(state: &AppState, prefix: &str) {
+    state
+        .errors
+        .write()
+        .await
+        .retain(|key, _| !key.starts_with(prefix));
+}
+
 /// Der Schlüssel, unter dem jetzt abgefragt werden soll, oder `None`. Fällig, wenn es in
 /// `TRAFFIC_REQUERY_KM` keinen Stand jünger als `interval_ms` gibt und der letzte Versuch dieser
 /// Ebene länger als `TRAFFIC_RETRY_MS` her ist. Der Versuch zählt je Ebene, nicht je Ort: Ein
@@ -370,6 +389,7 @@ pub async fn poll_traffic(
         let due = traffic_due(state, INCIDENTS_PREFIX, &here, INCIDENTS_INTERVAL_MS, now).await;
         if let Some(loc) = due {
             let k = incidents_key(&loc);
+            clear_traffic_errors(state, INCIDENTS_PREFIX).await;
             let (http, base, key) = (http.clone(), tomtom_base.clone(), key.to_string());
             let fetcher =
                 move || async move { tomtom::fetch_incidents(&http, &base, &key, &loc).await };
@@ -386,6 +406,7 @@ pub async fn poll_traffic(
         );
         if let Some(loc) = due.await {
             let k = speed_cameras_key(&loc);
+            clear_traffic_errors(state, SPEED_CAMERAS_PREFIX).await;
             let (http, base) = (http.clone(), overpass.clone());
             let fetcher = move || async move { osm::fetch(&http, &base, &loc).await };
             run_once(state, &k, fetcher, now_ms).await;
@@ -923,6 +944,18 @@ mod tests {
             traffic_key_shown(&s, INCIDENTS_PREFIX, &at(54.0, 10.5594)).await,
             "tomtom:54.0000,10.5500"
         );
+        // Ein Fehler am neuen Ort gehört zum angezeigten Stand von anderswo; der nächste Versuch löst ihn ab.
+        s.errors
+            .write()
+            .await
+            .insert("tomtom:54.0000,10.5500".into(), "kaputt".into());
+        assert_eq!(
+            traffic_error(&s, INCIDENTS_PREFIX).await.as_deref(),
+            Some("kaputt")
+        );
+        assert_eq!(traffic_error(&s, SPEED_CAMERAS_PREFIX).await, None);
+        clear_traffic_errors(&s, INCIDENTS_PREFIX).await;
+        assert_eq!(traffic_error(&s, INCIDENTS_PREFIX).await, None);
         // Andere Ebene, eigener Versuch.
         assert!(
             traffic_due(&s, SPEED_CAMERAS_PREFIX, &home, hour, later)
