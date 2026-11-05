@@ -7,8 +7,8 @@ use serde::de::DeserializeOwned;
 
 use crate::app::AppState;
 use crate::contract::{
-    ConfigState, MapInfo, MonitorView, NOTICES_VISIBLE_MAX, Position, Sourced, SpeedCamera,
-    SuchlageView, TrafficIncident, TrafficView, Warning, Weather,
+    ConfigState, Location, MapInfo, MonitorView, NOTICES_VISIBLE_MAX, Position, Sourced,
+    SpeedCamera, SuchlageView, TrafficIncident, TrafficView, Warning, Weather,
 };
 use crate::error::AppError;
 use crate::{poller, settings, store};
@@ -89,13 +89,18 @@ async fn suchlage(
 }
 
 /// Ebenen ohne Schlüssel oder ausgeschaltet kommen als `false`/`null`; Blitzer nur online.
-async fn traffic(state: &AppState, cfg: &settings::Settings, now_ms: i64) -> TrafficView {
+async fn traffic(
+    state: &AppState,
+    cfg: &settings::Settings,
+    location: &Location,
+    now_ms: i64,
+) -> TrafficView {
     let t = &cfg.traffic;
     let incidents = match t.key_for(t.incidents) {
         Some(_) => Some(
             sourced::<Vec<TrafficIncident>>(
                 state,
-                &poller::incidents_key(&poller::traffic_location(&cfg.location)),
+                &poller::traffic_key_shown(state, poller::INCIDENTS_PREFIX, location).await,
                 INCIDENTS_STALE_MS,
                 now_ms,
             )
@@ -107,7 +112,7 @@ async fn traffic(state: &AppState, cfg: &settings::Settings, now_ms: i64) -> Tra
         Some(
             sourced::<Vec<SpeedCamera>>(
                 state,
-                &poller::speed_cameras_key(&poller::traffic_location(&cfg.location)),
+                &poller::traffic_key_shown(state, poller::SPEED_CAMERAS_PREFIX, location).await,
                 SPEED_CAMERA_STALE_MS,
                 now_ms,
             )
@@ -158,7 +163,7 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<MonitorView>, App
     );
     let suchlage = suchlage(&state, &cfg, now_ms).await;
     let config = config(&state).await;
-    let traffic = traffic(&state, &cfg, now_ms).await;
+    let traffic = traffic(&state, &cfg, &location, now_ms).await;
     Ok(Json(MonitorView {
         now_ms,
         location,
